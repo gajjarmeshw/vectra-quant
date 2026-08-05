@@ -41,12 +41,43 @@ def require_secret(request: Request, x_sentinel_key: str = Header(default="")) -
 @router.get("/")
 def root_index(request: Request, request_token: str | None = None) -> Any:
     if request_token:
-        return {
-            "status": "success",
-            "message": "Zerodha login completed successfully!",
-            "request_token": request_token,
-            "next_step": "Exchange this request_token with your ZERODHA_API_SECRET to generate your ZERODHA_ACCESS_TOKEN.",
-        }
+        st = request.app.state
+        api_key = os.getenv("ZERODHA_API_KEY", "")
+        api_secret = os.getenv("ZERODHA_API_SECRET", "")
+        if api_key and api_secret:
+            from kiteconnect import KiteConnect
+            try:
+                kite = KiteConnect(api_key=api_key)
+                data = kite.generate_session(request_token, api_secret=api_secret)
+                new_token = str(data["access_token"])
+
+                # Update live broker adapter in memory
+                target = st.broker
+                if hasattr(target, "data_source"):
+                    target = target.data_source
+                if hasattr(target, "access_token"):
+                    target.access_token = new_token
+                if hasattr(target, "kite"):
+                    target.kite.set_access_token(new_token)
+
+                # Update .env on disk
+                from sentinel import config as config_mod
+                env_path = config_mod.ROOT / ".env"
+                if env_path.exists():
+                    content = env_path.read_text()
+                    import re
+                    if "ZERODHA_ACCESS_TOKEN=" in content:
+                        content = re.sub(r"ZERODHA_ACCESS_TOKEN=.*", f"ZERODHA_ACCESS_TOKEN={new_token}", content)
+                    else:
+                        content += f"\nZERODHA_ACCESS_TOKEN={new_token}\n"
+                    env_path.write_text(content)
+
+                log.info("Zerodha request_token auto-exchanged via OAuth redirect")
+                from fastapi.responses import RedirectResponse
+                return RedirectResponse(url="/?token_success=true")
+            except Exception as exc:
+                log.error("Failed to exchange request_token: %s", exc)
+
     from sentinel import config as config_mod
     pwa_index = config_mod.ROOT / "pwa" / "dist" / "index.html"
     if pwa_index.exists():
