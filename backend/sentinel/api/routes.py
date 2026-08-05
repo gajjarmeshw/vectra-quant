@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import re
 from typing import Any
 
 from fastapi import (
@@ -41,12 +43,13 @@ def require_secret(request: Request, x_sentinel_key: str = Header(default="")) -
 @router.get("/")
 def root_index(request: Request, request_token: str | None = None) -> Any:
     if request_token:
-        st = request.app.state
-        api_key = os.getenv("ZERODHA_API_KEY", "")
-        api_secret = os.getenv("ZERODHA_API_SECRET", "")
-        if api_key and api_secret:
-            from kiteconnect import KiteConnect
-            try:
+        try:
+            st = request.app.state
+            api_key = os.getenv("ZERODHA_API_KEY", "") or getattr(st.settings.secrets, "zerodha_api_key", "")
+            api_secret = os.getenv("ZERODHA_API_SECRET", "") or getattr(st.settings.secrets, "zerodha_api_secret", "")
+
+            if api_key and api_secret:
+                from kiteconnect import KiteConnect
                 kite = KiteConnect(api_key=api_key)
                 data = kite.generate_session(request_token, api_secret=api_secret)
                 new_token = str(data["access_token"])
@@ -65,7 +68,6 @@ def root_index(request: Request, request_token: str | None = None) -> Any:
                 env_path = config_mod.ROOT / ".env"
                 if env_path.exists():
                     content = env_path.read_text()
-                    import re
                     if "ZERODHA_ACCESS_TOKEN=" in content:
                         content = re.sub(r"ZERODHA_ACCESS_TOKEN=.*", f"ZERODHA_ACCESS_TOKEN={new_token}", content)
                     else:
@@ -75,8 +77,8 @@ def root_index(request: Request, request_token: str | None = None) -> Any:
                 log.info("Zerodha request_token auto-exchanged via OAuth redirect")
                 from fastapi.responses import RedirectResponse
                 return RedirectResponse(url="/?token_success=true")
-            except Exception as exc:
-                log.error("Failed to exchange request_token: %s", exc)
+        except Exception as exc:
+            log.error("Failed to exchange request_token: %s", exc)
 
     from sentinel import config as config_mod
     pwa_index = config_mod.ROOT / "pwa" / "dist" / "index.html"
