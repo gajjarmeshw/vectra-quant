@@ -59,6 +59,8 @@ def _env_first(*names: str, default: str = "") -> str:
 class Secrets:
     groww_api_key: str = ""
     groww_totp_seed: str = ""
+    zerodha_api_key: str = ""
+    zerodha_access_token: str = ""
     groq_api_key: str = ""
     claude_bridge_url: str = ""
     vapid_public: str = ""
@@ -74,6 +76,8 @@ class Secrets:
         return Secrets(
             groww_api_key=_env_first("GROWW_API_KEY", "GROWW_TOTP_TOKEN"),
             groww_totp_seed=_env_first("GROWW_TOTP_SEED", "GROWW_TOTP_CODE"),
+            zerodha_api_key=_env_first("ZERODHA_API_KEY"),
+            zerodha_access_token=_env_first("ZERODHA_ACCESS_TOKEN"),
             groq_api_key=_env_first("GROQ_API_KEY", "GROQ_KEY"),
             claude_bridge_url=_env_first("CLAUDE_BRIDGE_URL"),
             vapid_public=_env_first("VAPID_PUBLIC"),
@@ -175,6 +179,7 @@ class Settings:
     events: EventsCfg
     instruments: InstrumentsCfg
     secrets: Secrets
+    broker_name: str = "groww"
     mode: str = "LIVE"
     floor_warning_rupees: float = 200.0
     tz: str = "Asia/Kolkata"
@@ -310,6 +315,7 @@ def _build(raw: dict[str, Any], secrets: Secrets) -> Settings:
             chain_depth=int((raw.get("instruments") or {}).get("chain_depth", 5)),
         ),
         secrets=secrets,
+        broker_name=str(os.getenv("BROKER_NAME") or raw.get("broker") or "groww").lower(),
         mode=str(raw.get("mode", "LIVE")).upper(),
         floor_warning_rupees=float((raw.get("push") or {}).get("floor_warning_rupees", 200)),
         tz=os.getenv("TZ", "Asia/Kolkata"),
@@ -341,6 +347,30 @@ def reload() -> Settings:
     with _lock:
         _cached = load()
     return _cached
+
+
+RISK_PRESETS: dict[str, dict[str, float]] = {
+    "CONSERVATIVE": {"target": 1500.0, "loss_limit": 1000.0, "risk_per_trade": 500.0},
+    "MODERATE": {"target": 2500.0, "loss_limit": 1500.0, "risk_per_trade": 1200.0},
+    "AGGRESSIVE": {"target": 5000.0, "loss_limit": 3000.0, "risk_per_trade": 2500.0},
+}
+
+
+def apply_preset(name: str, path: Path | None = None) -> Settings:
+    """Apply a named risk profile preset (CONSERVATIVE | MODERATE | AGGRESSIVE)."""
+    name_upper = name.strip().upper()
+    if name_upper not in RISK_PRESETS:
+        raise ValueError(f"Unknown risk preset '{name}'. Valid presets: {list(RISK_PRESETS.keys())}")
+
+    p = path or PARAMS_PATH
+    raw = yaml.safe_load(p.read_text()) if p.is_file() else {}
+    raw.setdefault("daily", {})
+    preset_vals = RISK_PRESETS[name_upper]
+    raw["daily"]["preset"] = name_upper
+    raw["daily"]["target"] = preset_vals["target"]
+    raw["daily"]["loss_limit"] = preset_vals["loss_limit"]
+    raw["daily"]["risk_per_trade"] = preset_vals["risk_per_trade"]
+    return write_params(raw, p)
 
 
 def default_params(path: Path | None = None) -> dict[str, Any]:

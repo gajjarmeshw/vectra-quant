@@ -41,6 +41,8 @@ export function Today({ s, onSquareOff }) {
         })}
       </div>
 
+      <PremarketCard />
+
       <Card>
         <Row
           left={<Eyebrow>Day P&amp;L</Eyebrow>}
@@ -426,19 +428,25 @@ export function Locked({ s, onReadReport }) {
         </div>
       </div>
 
+      <PremarketCard />
+
       <button className="btn-primary" onClick={onReadReport}>
         Read day-end report
       </button>
       <a
         className="btn-ghost block text-center"
-        href="https://groww.in/user/profile/settings"
+        href={s.broker === 'zerodha' ? 'https://console.kite.zerodha.com/' : 'https://groww.in/user/profile/settings'}
         target="_blank"
         rel="noreferrer"
       >
-        Groww kill switch ↗
+        {s.broker === 'zerodha' ? 'Zerodha Console ↗' : 'Groww kill switch ↗'}
       </a>
 
-      <Banner tone="ink">Your broker-side stops remain resting.</Banner>
+      <Banner tone="ink">
+        {(s.positions || []).length > 0
+          ? `Your broker-side stops remain resting on ${s.broker === 'zerodha' ? 'Zerodha' : 'Groww'}.`
+          : 'All positions flat. Zero active resting orders on exchange.'}
+      </Banner>
     </div>
   );
 }
@@ -606,6 +614,43 @@ export function System({ s, onKill, onEnablePush, pushState, onOpenConfig }) {
       </Card>
 
       <Card>
+        <Eyebrow>Risk Profile Presets</Eyebrow>
+        <p className="text-body text-ink-2 mt-2">
+          1-tap risk budget preset selection for market conditions (Target / Loss Limit / Risk per trade).
+        </p>
+        <div className="grid grid-cols-3 gap-2 mt-3">
+          {['CONSERVATIVE', 'MODERATE', 'AGGRESSIVE'].map((p) => (
+            <button
+              key={p}
+              className={`btn text-xs py-2 ${
+                (s.risk?.target === (p === 'CONSERVATIVE' ? 1500 : p === 'AGGRESSIVE' ? 5000 : 2500))
+                  ? 'bg-green text-white border-green font-bold'
+                  : 'btn-ghost'
+              }`}
+              onClick={async () => {
+                try {
+                  await api.setPreset(p);
+                  alert(`Applied ${p} risk profile preset!`);
+                } catch (e) {
+                  alert(e.message);
+                }
+              }}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
+        <Eyebrow>Historical Backtest & Replay</Eyebrow>
+        <p className="text-body text-ink-2 mt-2">
+          Replay 1-minute OHLCV candles through breakout strategy & FSM risk rules across index F&O.
+        </p>
+        <BacktestConsole />
+      </Card>
+
+      <Card>
         <Eyebrow>Notifications</Eyebrow>
         <p className="text-body text-ink-2 mt-2">
           iOS requires this app to be installed to the home screen before push works.
@@ -625,6 +670,82 @@ export function System({ s, onKill, onEnablePush, pushState, onOpenConfig }) {
           Open config
         </button>
       </Card>
+    </div>
+  );
+}
+
+function BacktestConsole() {
+  const [inst, setInst] = useState('NIFTY');
+  const [days, setDays] = useState(5);
+  const [res, setRes] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const onRun = async () => {
+    setLoading(true);
+    try {
+      const data = await api.runBacktest({ instrument: inst, days });
+      setRes(data);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        <select
+          className="rounded-block px-3 py-2 border border-line bg-card text-ink num text-sec"
+          value={inst}
+          onChange={(e) => setInst(e.target.value)}
+        >
+          <option value="NIFTY">NIFTY</option>
+          <option value="BANKNIFTY">BANKNIFTY</option>
+          <option value="SENSEX">SENSEX</option>
+          <option value="FINNIFTY">FINNIFTY</option>
+        </select>
+        <select
+          className="rounded-block px-3 py-2 border border-line bg-card text-ink num text-sec"
+          value={days}
+          onChange={(e) => setDays(Number(e.target.value))}
+        >
+          <option value={5}>5 Days</option>
+          <option value={10}>10 Days</option>
+          <option value={20}>20 Days</option>
+        </select>
+      </div>
+      <button className="btn bg-ink text-white w-full" onClick={onRun} disabled={loading}>
+        {loading ? 'Running Replay...' : 'Run Historical Replay'}
+      </button>
+
+      {res && (
+        <div className="mt-3 pt-3 border-t border-line space-y-2">
+          <div className="flex justify-between items-center font-disp font-semibold text-sec">
+            <span>{res.instrument} ({res.days} Days)</span>
+            <span className={pnlColor(res.final_pnl)}>{rupee(res.final_pnl, true)}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center text-xs num py-2 bg-line/20 rounded-block">
+            <div>
+              <span className="text-muted block">Win %</span>
+              <span className="font-semibold">{res.win_pct}%</span>
+            </div>
+            <div>
+              <span className="text-muted block">Trades</span>
+              <span className="font-semibold">{res.total_trades} ({res.wins}W/{res.losses}L)</span>
+            </div>
+            <div>
+              <span className="text-muted block">Profit Factor</span>
+              <span className="font-semibold">{res.profit_factor}</span>
+            </div>
+          </div>
+          <div className="num text-sec text-muted text-xs flex justify-between">
+            <span>Gross: {rupee(res.gross_pnl, true)}</span>
+            <span>Costs: {rupee(res.total_costs)}</span>
+            <span>Max DD: {rupee(res.max_drawdown)}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -905,6 +1026,32 @@ export function DayEnd() {
       </Card>
 
       <Card>
+        <Eyebrow>Executed Trades ({r.replay?.length || 0})</Eyebrow>
+        {(r.replay || []).length === 0 ? (
+          <Empty>No trades executed today.</Empty>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {r.replay.map((t, i) => (
+              <div key={i} className="p-3 rounded-block bg-line/30 border border-line/60 space-y-1.5">
+                <div className="flex justify-between items-center font-disp font-semibold text-sec">
+                  <span>{t.symbol}</span>
+                  <span className={pnlColor(t.net)}>{rupee(t.net, true)}</span>
+                </div>
+                <div className="num text-sec text-muted flex justify-between">
+                  <span>BUY @ ₹{t.entry} → SELL @ ₹{t.exit}</span>
+                  <span>Gross: {rupee(t.gross, true)}</span>
+                </div>
+                <div className="num text-ai text-muted flex justify-between text-xs pt-1 border-t border-line/40">
+                  <span>Origin: {t.origin} ({t.reason || 'manual'})</span>
+                  <span>Charges: {rupee(t.costs)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
         <Eyebrow>Suggested vs taken</Eyebrow>
         <p className="text-body text-ink-2 mt-2">{r.suggested_vs_taken?.note}</p>
       </Card>
@@ -919,5 +1066,120 @@ export function DayEnd() {
         ))}
       </Card>
     </div>
+  );
+}
+
+function PremarketCard() {
+  const [pm, setPm] = useState(null);
+  const [open, setOpen] = useState(true);
+  const [loading, setLoading] = useState(false);
+
+  const loadReport = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getPremarketReport();
+      setPm(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadReport();
+  }, []);
+
+  const biasColor =
+    pm?.bias === 'BULLISH'
+      ? 'bg-green text-white border-green'
+      : pm?.bias === 'BEARISH'
+      ? 'bg-red text-white border-red'
+      : 'bg-ink text-white border-ink';
+
+  const confColor =
+    pm?.confidence === 'HIGH'
+      ? 'bg-green/10 text-green border-green/30'
+      : pm?.confidence === 'LOW'
+      ? 'bg-amber/10 text-amber border-amber/30'
+      : 'bg-ink/10 text-ink border-ink/30';
+
+  return (
+    <Card>
+      <div className="flex justify-between items-center cursor-pointer" onClick={() => setOpen(!open)}>
+        <div>
+          <Eyebrow>Pre-Market Intelligence</Eyebrow>
+          {pm ? (
+            <div className="font-disp font-semibold text-sec mt-1 flex items-center gap-2 flex-wrap">
+              <span>{pm.opening_gap} ({pm.gap_points > 0 ? `+${pm.gap_points} pts` : `${pm.gap_points || 0} pts`})</span>
+              <span className={`chip text-xs px-2 py-0.5 ${biasColor}`}>{pm.bias}</span>
+              {pm.confidence && (
+                <span className={`chip text-xs px-2 py-0.5 border ${confColor}`}>
+                  {pm.confidence} CONFIDENCE
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="num text-sec text-muted mt-1">Loading intelligence...</div>
+          )}
+        </div>
+        <button className="text-muted text-lg">{open ? '▲' : '▼'}</button>
+      </div>
+
+      {open && pm && (
+        <div className="mt-3 pt-3 border-t border-line space-y-3">
+          <p className="text-body text-ink-2 leading-relaxed">{pm.summary}</p>
+
+          <div className="grid grid-cols-2 gap-2 text-xs num py-2 bg-line/20 rounded-block">
+            <div className="px-2">
+              <span className="text-muted block">NIFTY Put / Call Wall</span>
+              <span className="font-semibold">{pm.nifty_support} – {pm.nifty_resistance}</span>
+            </div>
+            <div className="px-2">
+              <span className="text-muted block">BANKNIFTY Range</span>
+              <span className="font-semibold">{pm.banknifty_support} – {pm.banknifty_resistance}</span>
+            </div>
+          </div>
+
+          <div>
+            <span className="text-xs text-muted block mb-1">Sectors &amp; Specific Macro Drivers:</span>
+            <div className="space-y-1.5 mt-1">
+              {(pm.sectors_to_watch || []).map((sec, i) => {
+                const sName = typeof sec === 'string' ? sec : sec.sector;
+                const sReason = typeof sec === 'string' ? 'Macro read-through' : sec.reason;
+                return (
+                  <div key={i} className="text-xs bg-line/20 p-2.5 rounded-block flex justify-between items-center gap-2">
+                    <span className="font-bold text-ink">{sName}</span>
+                    <span className="text-muted text-right text-xs">{sReason}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {(pm.data_flags || []).length > 0 && (
+            <div className="p-2.5 rounded-block bg-amber/10 border border-amber/20 text-xs text-amber leading-relaxed">
+              <strong>Data Caveats:</strong> {pm.data_flags.join(' · ')}
+            </div>
+          )}
+
+          <div className="p-2.5 rounded-block bg-ai/10 border border-ai/20 text-xs text-ink leading-relaxed">
+            <strong className="text-ai block mb-0.5">Pre-Market Risk Advisory (09:15–09:35 AM):</strong>
+            {pm.actionable_advice}
+          </div>
+
+          <button
+            className="btn bg-ink text-white text-xs py-2.5 w-full flex items-center justify-center gap-1.5 font-bold"
+            onClick={(e) => {
+              e.stopPropagation();
+              loadReport();
+            }}
+            disabled={loading}
+          >
+            {loading ? 'Analyzing Live Macro & Financial News...' : 'Run Morning Intelligence Now ⚡'}
+          </button>
+        </div>
+      )}
+    </Card>
   );
 }

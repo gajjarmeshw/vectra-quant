@@ -38,6 +38,18 @@ def require_secret(request: Request, x_sentinel_key: str = Header(default="")) -
 
 # ---------------------------------------------------------------- state
 
+@router.get("/")
+def root_index(request: Request, request_token: str | None = None) -> dict[str, Any]:
+    if request_token:
+        return {
+            "status": "success",
+            "message": "Zerodha login completed successfully!",
+            "request_token": request_token,
+            "next_step": "Exchange this request_token with your ZERODHA_API_SECRET to generate your ZERODHA_ACCESS_TOKEN.",
+        }
+    return {"name": "SENTINEL API", "status": "running"}
+
+
 @router.get("/health")
 def health(request: Request) -> dict[str, Any]:
     st = request.app.state
@@ -123,6 +135,7 @@ def build_state(st: Any) -> dict[str, Any]:
         "capital": st.settings.capital,
         "max_position_cost": st.settings.sizing.max_position_cost,
         "mode": st.settings.mode,
+        "broker": getattr(st.settings, "broker_name", "groww").lower(),
         "kill_switch": "ON" if st.killswitch.is_on else "OFF",
         "week_locked": st.orch.week_locked,
         "floor_distance": st.orch.floor_distance(),
@@ -374,10 +387,58 @@ def dayend(request: Request, date: str = "") -> dict:
     return build_dayend_report(request.app.state, date or session_date())
 
 
+@router.get("/report/premarket", dependencies=[Depends(require_secret)])
+def premarket_report(request: Request) -> dict:
+    from sentinel.reports.premarket import build_premarket_report
+    return build_premarket_report(request.app.state)
+
+
 @router.get("/report/journal", dependencies=[Depends(require_secret)])
 def journal(request: Request, limit: int = 200) -> dict:
     from sentinel.reports.dayend import build_journal
     return build_journal(limit=limit)
+
+
+@router.post("/config/preset", dependencies=[Depends(require_secret)])
+def set_preset(request: Request, body: dict[str, Any]) -> dict[str, Any]:
+    preset_name = str(body.get("preset", "")).strip().upper()
+    if not preset_name:
+        raise HTTPException(status_code=400, detail="preset field is required")
+    try:
+        from sentinel.config import apply_preset
+        s = apply_preset(preset_name)
+        request.app.state.settings = s
+        return {
+            "ok": True,
+            "preset": preset_name,
+            "target": s.risk.target,
+            "loss_limit": s.risk.loss_limit,
+            "risk_per_trade": s.risk.risk_per_trade,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/report/backtest", dependencies=[Depends(require_secret)])
+def run_backtest(request: Request, body: dict[str, Any]) -> dict[str, Any]:
+    instrument = str(body.get("instrument", "NIFTY")).upper()
+    days = int(body.get("days", 5))
+    preset = str(body.get("preset", "MODERATE")).upper()
+
+    from sentinel.backtest.engine import BacktestEngine
+    from sentinel.config import RISK_PRESETS
+    from sentinel.risk_engine import RiskConfig
+
+    preset_vals = RISK_PRESETS.get(preset, RISK_PRESETS["MODERATE"])
+    risk_cfg = RiskConfig(
+        capital=request.app.state.settings.capital,
+        target=preset_vals["target"],
+        loss_limit=preset_vals["loss_limit"],
+        risk_per_trade=preset_vals["risk_per_trade"],
+    )
+    engine = BacktestEngine(risk_cfg)
+    res = engine.run(instrument=instrument, days=days)
+    return res.as_dict()
 
 
 # ---------------------------------------------------------------- websocket
@@ -439,3 +500,47 @@ async def live(ws: WebSocket) -> None:
         log.info("ws closed", extra={"error": str(exc)[:120]})
     finally:
         await st.hub.disconnect(ws)
+
+
+# ---------------------------------------------------------------- webhooks
+
+@router.post("/webhooks/zerodha")
+async def zerodha_postback(request: Request) -> dict[str, Any]:
+    """Free Zerodha Order Execution Postback Webhook endpoint with SHA-256 checksum verification."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    order_id = str(data.get("order_id", ""))
+    status = str(data.get("status", "")).upper()
+    symbol = str(data.get("tradingsymbol", ""))
+    order_ts = str(data.get("order_timestamp", ""))
+    received_checksum = str(data.get("checksum", ""))
+
+    api_secret = os.getenv("ZERODHA_API_SECRET", "")
+    if api_secret and received_checksum and order_id and order_ts:
+        import hashlib
+        expected_checksum = hashlib.sha256(f"{order_id}{order_ts}{api_secret}".encode()).hexdigest()
+        if received_checksum != expected_checksum:
+            log.warning("Zerodha postback checksum mismatch", extra={"order_id": order_id})
+            raise HTTPException(status_code=400, detail="Invalid checksum")
+
+    log.info("Zerodha Postback Webhook received", extra={"order_id": order_id, "status": status, "symbol": symbol})
+
+    st = request.app.state
+    if hasattr(st, "guardian") and callable(getattr(st.guardian, "poll_once", None)):
+        st.guardian.poll_once()
+
+    return {"ok": True, "received": True, "order_id": order_id, "status": status}
+
+
+@router.post("/webhooks/signal")
+async def signal_webhook(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+    """Free Custom / TradingView Signal Webhook endpoint."""
+    symbol = str(payload.get("symbol", "NIFTY")).upper()
+    event_kind = str(payload.get("event", "CUSTOM_SIGNAL")).upper()
+    direction = str(payload.get("direction", "CE")).upper()
+
+    log.info("Custom Signal Webhook received", extra={"symbol": symbol, "event": event_kind, "direction": direction})
+    return {"ok": True, "processed": True, "symbol": symbol, "event": event_kind}

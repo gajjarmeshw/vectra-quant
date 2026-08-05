@@ -172,3 +172,77 @@ def fsm_context(
         "day_pnl_sign": "green" if day_pnl > 0 else ("red" if day_pnl < 0 else "flat"),
         "protected": state in ("PROTECT", "TRAIL"),
     }
+
+
+PREMARKET_SYSTEM_PROMPT = """\
+You are SENTINEL's Pre-Market Macro Intelligence AI.
+Your job is to synthesize pre-market open prices, global sentiment, India VIX volatility, and Call/Put option walls into a clean 3-sentence morning briefing and risk advisory.
+"""
+
+
+def build_premarket_prompt(
+    date_str: str,
+    nifty_px: float,
+    banknifty_px: float,
+    vix: float,
+    nifty_supp: float,
+    nifty_res: float,
+    bank_supp: float,
+    bank_res: float,
+    gift_nifty_px: float | None = None,      # GIFT Nifty / SGX futures — actual overnight signal
+    dow_change_pct: float | None = None,      # US close overnight
+    nasdaq_change_pct: float | None = None,
+    dxy: float | None = None,                 # Dollar index — impacts IT/pharma (export sensitive)
+    brent_crude: float | None = None,         # Impacts OMCs, paints, aviation, energy
+    usdinr: float | None = None,
+    fii_dii_net_cr: tuple[float, float] | None = None,  # (FII net, DII net) previous session
+    news_headlines: list[str] | None = None,
+) -> str:
+    headlines_str = "\n".join(f"- {h}" for h in (news_headlines or ["No major global macro disruptions reported."]))
+    vix_desc = "Elevated (>18)" if vix > 18.0 else ("Low (<12)" if vix < 12.0 else "Normal (12-18)")
+
+    def fmt(label, val, suffix=""):
+        return f"   - {label}: {val}{suffix}\n" if val is not None else f"   - {label}: NOT PROVIDED\n"
+
+    global_block = (
+        fmt("GIFT Nifty / SGX Futures", gift_nifty_px)
+        + fmt("Dow Jones overnight change", dow_change_pct, "%")
+        + fmt("Nasdaq overnight change", nasdaq_change_pct, "%")
+        + fmt("US Dollar Index (DXY)", dxy)
+        + fmt("Brent Crude (USD/bbl)", brent_crude)
+        + fmt("USD/INR", usdinr)
+        + (f"   - FII/DII Net (prev session, ₹Cr): FII {fii_dii_net_cr[0]:+,.0f} / DII {fii_dii_net_cr[1]:+,.0f}\n"
+           if fii_dii_net_cr else "   - FII/DII Net: NOT PROVIDED\n")
+    )
+
+    return (
+        f"Generate a Pre-Market Intelligence Briefing for {date_str} using ONLY the data below. "
+        f"Do not supplement with outside knowledge.\n\n"
+        f"1. INDEX & VOLATILITY DATA:\n"
+        f"   - NIFTY Spot: {nifty_px:,.2f}\n"
+        f"   - BANKNIFTY Spot: {banknifty_px:,.2f}\n"
+        f"   - India VIX: {vix:.2f} ({vix_desc})\n"
+        f"   - NIFTY Put Wall (support): {nifty_supp:,.0f}\n"
+        f"   - NIFTY Call Wall (resistance): {nifty_res:,.0f}\n"
+        f"   - BANKNIFTY Support: {bank_supp:,.0f}\n"
+        f"   - BANKNIFTY Resistance: {bank_res:,.0f}\n\n"
+        f"2. GLOBAL & FLOW CUES:\n{global_block}\n"
+        f"3. NEWS HEADLINES:\n{headlines_str}\n\n"
+        f"4. TASK:\n"
+        f"Using only the above, determine directional bias (BULLISH/BEARISH/NEUTRAL/VOLATILE), expected gap "
+        f"(direction + point estimate — base this on GIFT Nifty/SGX differential if provided, not vibes), "
+        f"sector-level read-through (only sectors traceable to a specific input above), a factual 2-sentence "
+        f"summary, and a 09:15-09:35 IST risk advisory. Where any of section 2's fields are NOT PROVIDED, "
+        f"do not compensate by guessing — narrow your gap/bias confidence accordingly.\n\n"
+        f"RETURN JSON:\n"
+        f"{{\n"
+        f'  "bias": "<BULLISH|BEARISH|NEUTRAL|VOLATILE>",\n'
+        f'  "confidence": "<LOW|MEDIUM|HIGH>",\n'
+        f'  "opening_gap": "<GAP_UP|GAP_DOWN|FLAT>",\n'
+        f'  "gap_points": <float>,\n'
+        f'  "sectors_to_watch": [{{"sector": "<name>", "reason": "<which specific input drove this>"}}],\n'
+        f'  "summary": "<2 sentences, only facts traceable to inputs above>",\n'
+        f'  "actionable_advice": "<specific 09:15-09:35 advisory tied to the given levels>",\n'
+        f'  "data_flags": ["<any inconsistency or missing-data caveat, else empty list>"]\n'
+        f"}}\n"
+    )

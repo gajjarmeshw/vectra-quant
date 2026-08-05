@@ -26,6 +26,7 @@ async function req(path, opts = {}) {
 export const getState = () => req('/state');
 export const getConfig = () => req('/config');
 export const getDayEnd = (date = '') => req(`/report/dayend${date ? `?date=${date}` : ''}`);
+export const getPremarketReport = () => req('/report/premarket');
 export const getJournal = () => req('/report/journal');
 
 /* ---------------------------------------------------------------- writes */
@@ -43,6 +44,12 @@ export const reject = (id, reason = '') =>
   req(`/suggestions/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
 
 export const squareOff = () => req('/squareoff', { method: 'POST' });
+
+export const setPreset = (preset) =>
+  req('/config/preset', { method: 'POST', body: JSON.stringify({ preset }) });
+
+export const runBacktest = (params) =>
+  req('/report/backtest', { method: 'POST', body: JSON.stringify(params) });
 
 export const setKillSwitch = (action, opts = {}) =>
   req('/killswitch', { method: 'POST', body: JSON.stringify({ action, ...opts }) });

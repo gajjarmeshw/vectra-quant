@@ -1,38 +1,37 @@
-# SENTINEL backend. ARM (Graviton t4g) and amd64 both build from this.
-FROM python:3.11-slim AS base
+# Multi-stage Dockerfile for SENTINEL (Vite PWA + FastAPI Python Backend)
 
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    TZ=Asia/Kolkata
+# Stage 1: Build PWA Frontend
+FROM node:20-alpine AS pwa-builder
+WORKDIR /app/pwa
+COPY pwa/package*.json ./
+RUN npm ci
+COPY pwa/ ./
+RUN npm run build
 
-RUN apt-get update \
- && apt-get install -y --no-install-recommends tzdata curl ca-certificates \
- && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
- && rm -rf /var/lib/apt/lists/*
-
+# Stage 2: Production Python Backend
+FROM python:3.11-slim
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
 
+# Install uv for ultra-fast dependency installation
+RUN pip install --no-cache-dir uv
+
+# Copy backend dependencies and source
+COPY pyproject.toml ./
 COPY backend/ ./backend/
 COPY config/ ./config/
-COPY docs/ ./docs/
 
-# growwapi caches its instrument master into its own package directory, so that
-# directory must be writable by the unprivileged runtime user.
-RUN useradd -m -u 10001 sentinel \
- && mkdir -p /app/data \
- && chown -R sentinel /app \
- && chown -R sentinel "$(python -c 'import growwapi,os;print(os.path.dirname(growwapi.__file__))')"
-USER sentinel
+# Install python package and dependencies
+RUN uv pip install --system -e .
 
-ENV PYTHONPATH=/app/backend
+# Copy built PWA static assets from Stage 1 into backend static folder
+COPY --from=pwa-builder /app/pwa/dist ./pwa/dist
+
+# Expose FastAPI port
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+# Environment defaults
+ENV PYTHONUNBUFFERED=1 \
+    PORT=8000
 
-# One worker on purpose: the RiskEngine is a single in-process instance and the
-# scheduler must not run twice.
-CMD ["uvicorn", "sentinel.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Run Uvicorn production server
+CMD ["uvicorn", "sentinel.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

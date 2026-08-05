@@ -111,13 +111,13 @@ class Pusher:
             log.warning("unknown push kind", extra={"kind": kind})
         if not self.configured:
             log.info("push not configured; skipping", extra={"kind": kind,
-                                                             "message": message[:80]})
+                                                             "body": message[:80]})
             return PushResult(0, 0, 0)
 
         if self._throttled(kind, message):
             self.suppressed += 1
             log.debug("duplicate push suppressed", extra={"kind": kind,
-                                                          "message": message[:80]})
+                                                          "body": message[:80]})
             return PushResult(0, 0, 0)
 
         payload = json.dumps({

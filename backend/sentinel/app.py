@@ -42,26 +42,41 @@ from sentinel.llm.router import LlmRouter
 
 log = logging_setup.get("app")
 
-INDEX_SYMBOLS = {"NIFTY": "NIFTY", "SENSEX": "SENSEX", "INDIAVIX": "INDIAVIX"}
+INDEX_SYMBOLS = {
+    "NIFTY": "NIFTY",
+    "BANKNIFTY": "BANKNIFTY",
+    "SENSEX": "SENSEX",
+    "FINNIFTY": "FINNIFTY",
+    "INDIAVIX": "INDIAVIX",
+}
 
 
 def build_broker(settings: Any):
-    """LIVE -> Groww. PAPER -> Sim wrapping Groww for real market data.
+    """LIVE -> Selected Broker (Groww/Zerodha). PAPER -> Sim wrapping broker for real market data.
 
     The three-red-days rule (design §4.6) is enforced HERE. Without this the flag
     was set, logged and pushed to the trader, then ignored at boot.
     """
-    from sentinel.brokers.groww import GrowwAdapter
     from sentinel.core.orchestrator import FORCE_PAPER_KEY
-    live = GrowwAdapter(settings.secrets.groww_api_key, settings.secrets.groww_totp_seed)
+
+    broker_name = getattr(settings, "broker_name", "groww").lower()
+    if broker_name == "zerodha":
+        from sentinel.brokers.zerodha import ZerodhaAdapter
+        log.info("Selected broker adapter: Zerodha")
+        live = ZerodhaAdapter(settings.secrets.zerodha_api_key, settings.secrets.zerodha_access_token)
+    else:
+        from sentinel.brokers.groww import GrowwAdapter
+        log.info("Selected broker adapter: Groww")
+        live = GrowwAdapter(settings.secrets.groww_api_key, settings.secrets.groww_totp_seed)
+
     forced = db.state_get(FORCE_PAPER_KEY, "") == "1"
     if forced:
         log.warning("THREE RED DAYS — forcing PAPER for this session (§4.6)")
     if settings.is_live and not forced:
-        log.warning("LIVE MODE — orders go to the real broker")
+        log.warning("LIVE MODE — orders go to the real broker (%s)", broker_name)
         return live
     from sentinel.brokers.sim import SimAdapter
-    log.warning("PAPER MODE — orders go to the simulator, market data is real")
+    log.warning("PAPER MODE — orders go to the simulator, market data is real (%s)", broker_name)
     return SimAdapter(starting_funds=settings.capital, data_source=live)
 
 

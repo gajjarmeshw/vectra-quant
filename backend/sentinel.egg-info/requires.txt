@@ -1,4 +1,3 @@
-# SENTINEL backend — pinned. Python 3.11+
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
@@ -15,9 +14,8 @@ py-vapid==1.9.2
 jsonschema==4.23.0
 python-json-logger==3.2.1
 boto3==1.35.92
+cryptography<44
 kiteconnect>=5.0.0
-
-# dev
 pytest==8.3.4
 pytest-asyncio==0.25.2
 ruff==0.8.6

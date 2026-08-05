@@ -89,8 +89,8 @@ export default function App() {
     if (!window.confirm('Market-exit every open position now?')) return;
     setBusy('squareoff');
     try {
-      const r = await api.squareOff();
-      flash(r.flat ? 'Flat — verified' : 'NOT FLAT — check the Groww app now');
+      const brokerName = state?.broker === 'zerodha' ? 'Zerodha' : 'Groww';
+      flash(r.flat ? 'Flat — verified' : `NOT FLAT — check the ${brokerName} app now`);
       await refresh();
     } catch (e) {
       flash(e.message);

@@ -1,14 +1,16 @@
-# SENTINEL — FACTORY DEFAULTS. Never written to at runtime.
-# "Reset all to defaults" in the PWA Config panel restores params.yaml from this
-# file. Edit this only to change what "default" means.
+# SENTINEL — the ONLY tunables file.
+# Every value here is editable at runtime via the PWA System screen
+# (typed CONFIRM, blocked 09:15-15:30 IST) or by editing this file + restart.
 # Build plan §3. Risk-engine values feed RiskConfig verbatim.
 
 capital: 15000
 
 daily:
   target: 2500              # T
-  loss_limit: 1500          # lock at dayPnL <= -loss_limit (must be >= risk_per_trade)
-  risk_per_trade: 1200      # r
+  # Daily drawdown. MUST be >= risk_per_trade or the per-trade budget is dead space:
+  # the day lock fires before a single full-risk trade can reach its stop.
+  loss_limit: 1500          # lock at dayPnL <= -loss_limit
+  risk_per_trade: 1200      # r — one full-risk loss = 80% of the day's drawdown
 
 trades:
   base: 3
@@ -28,7 +30,7 @@ fsm:
     giveback: 0.25          # keep 75% of peak
 
 windows:
-  entry_open: "09:15"
+  entry_open: "09:20"
   entry_close: "15:00"
   squareoff: "15:10"
   expiry_entry_close: "14:30"
@@ -52,8 +54,6 @@ sizing:
   max_lots:
     SENSEX: 4
     NIFTY: 1
-    BANKNIFTY: 1
-    FINNIFTY: 2
 
 # Strike selection for suggestions (D-010). Picks the contract with the best
 # chance of actually moving, not the cheapest lottery ticket.
@@ -70,9 +70,7 @@ strike_selection:
 
 default_sl_premium_pts:
   NIFTY: 12
-  BANKNIFTY: 30
   SENSEX: 35
-  FINNIFTY: 20
 
 instruments:
   primary: SENSEX
@@ -134,5 +132,5 @@ events:
 push:
   floor_warning_rupees: 200
 
-broker: zerodha                # groww | zerodha
-mode: PAPER                   # PAPER | LIVE  (go-live gate removed by user decision D-002)
+broker: zerodha                 # groww | zerodha
+mode:  PAPER               # PAPER | LIVE  (go-live gate removed by user decision D-002)
