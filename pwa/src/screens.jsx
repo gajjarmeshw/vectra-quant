@@ -643,6 +643,26 @@ export function System({ s, onKill, onEnablePush, pushState, onOpenConfig }) {
       </Card>
 
       <Card>
+        <Eyebrow>Zerodha 2FA Session Security</Eyebrow>
+        <p className="text-body text-ink-2 mt-2">
+          Automate 2FA TOTP login to Zerodha KiteConnect and update your active access token live in memory.
+        </p>
+        <button
+          className="btn bg-ink text-white w-full mt-3 font-medium flex items-center justify-center gap-2"
+          onClick={async () => {
+            try {
+              const res = await api.refreshZerodhaToken();
+              alert(`Zerodha Token Refreshed Successfully! 🔑\n\nSnippet: ${res.token_snippet}\nMessage: ${res.message}`);
+            } catch (e) {
+              alert(`Token Auto-Refresh Error:\n${e.message}`);
+            }
+          }}
+        >
+          Auto-Refresh Zerodha Token 🔐
+        </button>
+      </Card>
+
+      <Card>
         <Eyebrow>Historical Backtest & Replay</Eyebrow>
         <p className="text-body text-ink-2 mt-2">
           Replay 1-minute OHLCV candles through breakout strategy & FSM risk rules across index F&O.

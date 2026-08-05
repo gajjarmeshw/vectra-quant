@@ -39,7 +39,7 @@ def require_secret(request: Request, x_sentinel_key: str = Header(default="")) -
 # ---------------------------------------------------------------- state
 
 @router.get("/")
-def root_index(request: Request, request_token: str | None = None) -> dict[str, Any]:
+def root_index(request: Request, request_token: str | None = None) -> Any:
     if request_token:
         return {
             "status": "success",
@@ -47,6 +47,11 @@ def root_index(request: Request, request_token: str | None = None) -> dict[str, 
             "request_token": request_token,
             "next_step": "Exchange this request_token with your ZERODHA_API_SECRET to generate your ZERODHA_ACCESS_TOKEN.",
         }
+    from sentinel import config as config_mod
+    pwa_index = config_mod.ROOT / "pwa" / "dist" / "index.html"
+    if pwa_index.exists():
+        from fastapi.responses import FileResponse
+        return FileResponse(str(pwa_index))
     return {"name": "SENTINEL API", "status": "running"}
 
 
@@ -544,3 +549,58 @@ async def signal_webhook(request: Request, payload: dict[str, Any]) -> dict[str,
 
     log.info("Custom Signal Webhook received", extra={"symbol": symbol, "event": event_kind, "direction": direction})
     return {"ok": True, "processed": True, "symbol": symbol, "event": event_kind}
+
+
+@router.post("/broker/refresh-token")
+async def refresh_broker_token(request: Request) -> dict[str, Any]:
+    """1-Tap automated 2FA Zerodha access_token refresh and live adapter update."""
+    import os
+    import re
+    from sentinel import config as config_mod
+
+    st = request.app.state
+    user_id = os.getenv("ZERODHA_USER_ID", "")
+    password = os.getenv("ZERODHA_PASSWORD", "")
+    totp_seed = os.getenv("ZERODHA_TOTP_SEED", "")
+    api_key = os.getenv("ZERODHA_API_KEY", "")
+    api_secret = os.getenv("ZERODHA_API_SECRET", "")
+
+    if not (user_id and password and totp_seed and api_key and api_secret):
+        raise HTTPException(
+            status_code=400,
+            detail="Missing ZERODHA_USER_ID, ZERODHA_PASSWORD, or ZERODHA_TOTP_SEED in environment."
+        )
+
+    from scripts.get_zerodha_token import generate_access_token_auto
+    try:
+        new_token = generate_access_token_auto(user_id, password, totp_seed, api_key, api_secret)
+
+        # Update live broker adapter in memory
+        target = st.broker
+        if hasattr(target, "data_source"):
+            target = target.data_source
+
+        if hasattr(target, "access_token"):
+            target.access_token = new_token
+        if hasattr(target, "kite"):
+            target.kite.set_access_token(new_token)
+
+        # Update .env file on disk if it exists
+        env_path = config_mod.ROOT / ".env"
+        if env_path.exists():
+            content = env_path.read_text()
+            if "ZERODHA_ACCESS_TOKEN=" in content:
+                content = re.sub(r"ZERODHA_ACCESS_TOKEN=.*", f"ZERODHA_ACCESS_TOKEN={new_token}", content)
+            else:
+                content += f"\nZERODHA_ACCESS_TOKEN={new_token}\n"
+            env_path.write_text(content)
+
+        log.info("Zerodha access_token auto-refreshed successfully via API")
+        return {
+            "ok": True,
+            "token_snippet": new_token[:8] + "...",
+            "message": "Zerodha access_token updated & live in memory!"
+        }
+    except Exception as exc:
+        log.error("Failed to auto-refresh Zerodha token: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Auto-refresh failed: {str(exc)[:180]}")

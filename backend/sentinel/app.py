@@ -209,6 +209,15 @@ def create_app() -> FastAPI:
         st.candles.flush()
         log.warning("SENTINEL stopped")
 
+    # Mount Vite PWA static build if pwa/dist exists
+    pwa_dist = config_mod.ROOT / "pwa" / "dist"
+    if pwa_dist.exists() and pwa_dist.is_dir():
+        from fastapi.staticfiles import StaticFiles
+        assets_dir = pwa_dist / "assets"
+        if assets_dir.exists() and assets_dir.is_dir():
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+        app.mount("/static", StaticFiles(directory=str(pwa_dist)), name="static")
+
     return app
 
 

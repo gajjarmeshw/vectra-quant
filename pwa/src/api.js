@@ -51,6 +51,9 @@ export const setPreset = (preset) =>
 export const runBacktest = (params) =>
   req('/report/backtest', { method: 'POST', body: JSON.stringify(params) });
 
+export const refreshZerodhaToken = () =>
+  req('/broker/refresh-token', { method: 'POST' });
+
 export const setKillSwitch = (action, opts = {}) =>
   req('/killswitch', { method: 'POST', body: JSON.stringify({ action, ...opts }) });
 
