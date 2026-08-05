@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SENTINEL">
+  <title>SENTINEL</title>
+  <!-- One shape, one colour: a solid shield with a rising step knocked out of it.
+       The shield is the risk engine; the step only ever goes up, like the floor. -->
+  <path d="M256 92l150 44v128c0 84-58 148-150 184-92-36-150-100-150-184V136Z" fill="#0B0B0A"/>
+  <path d="M186 300h44v-44h44v-44h44" fill="none" stroke="#FEFEFD" stroke-width="26"
+        stroke-linecap="square"/>
+</svg>

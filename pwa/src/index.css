@@ -1,0 +1,96 @@
+/* Fonts self-hosted via @fontsource — an offline PWA must not depend on a CDN
+   (build plan Appendix C). */
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource/geist-sans/400.css';
+@import '@fontsource/geist-sans/500.css';
+@import '@fontsource/geist-mono/400.css';
+@import '@fontsource/geist-mono/500.css';
+@import '@fontsource/geist-mono/600.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    background: theme('colors.paper');
+  }
+  body {
+    @apply bg-paper text-ink font-body text-body antialiased;
+    /* Dynamic Island / home bar */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    overscroll-behavior-y: none;
+  }
+  /* Every number is mono + tabular. Non-negotiable per §1 typography. */
+  .num {
+    @apply font-mono;
+    font-variant-numeric: tabular-nums;
+  }
+  :focus-visible {
+    outline: 2px solid theme('colors.ink');
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-card border border-line rounded-card p-cardpad;
+  }
+  .eyebrow {
+    @apply num text-eyebrow uppercase text-muted;
+  }
+  .chip {
+    @apply num text-chip px-2.5 py-1 rounded-pill border border-line;
+  }
+  .btn {
+    @apply font-disp text-btn font-semibold w-full rounded-pill transition-transform duration-150;
+    padding-top: 17px;
+    padding-bottom: 17px;
+  }
+  .btn:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+  .btn:disabled {
+    opacity: 0.4;
+  }
+  .btn-primary {
+    @apply btn bg-ink text-white;
+  }
+  .btn-ghost {
+    @apply btn bg-white text-ink border border-line;
+  }
+  .btn-danger {
+    @apply btn bg-red text-white;
+  }
+  .btn-dashed {
+    @apply btn bg-white text-muted border border-dashed border-line;
+  }
+  .tabbar {
+    @apply fixed bottom-0 inset-x-0 border-t border-line bg-white/85 backdrop-blur-md;
+    height: calc(86px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.ai-pulse {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}

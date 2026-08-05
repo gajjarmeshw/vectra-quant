@@ -1,0 +1,133 @@
+# SENTINEL — FACTORY DEFAULTS. Never written to at runtime.
+# "Reset all to defaults" in the PWA Config panel restores params.yaml from this
+# file. Edit this only to change what "default" means.
+# Build plan §3. Risk-engine values feed RiskConfig verbatim.
+
+capital: 15000
+
+daily:
+  target: 2500              # T
+  loss_limit: 1500          # lock at dayPnL <= -loss_limit (must be >= risk_per_trade)
+  risk_per_trade: 1200      # r
+
+trades:
+  base: 3
+  bonus_at_pct_target: 0.45 # realized >= 45% of T unlocks 4th trade
+  cooldown_min: 0
+  consecutive_loss_stop: 2
+
+fsm:
+  t1_keep_pct: 0.70         # EARNED floor = 0.70 * dayPnL ("keep 70")
+  protect:
+    at: 1.0                 # x target
+    floor_pct_target: 0.5
+    risk_scale: 0.5
+    min_conf: 80
+  trail:
+    at: 1.3                 # x target
+    giveback: 0.25          # keep 75% of peak
+
+windows:
+  entry_open: "09:20"
+  entry_close: "15:00"
+  squareoff: "15:10"
+  expiry_entry_close: "14:30"
+  # Expiry day changes NOTHING except the earlier entry cutoff above.
+  # 1.0 = risk per trade stays exactly r on expiry days (user decision D-009).
+  expiry_risk_scale: 1.0
+
+sizing:
+  max_premium_pct_capital: 1.0   # no %-of-capital cap (user decision D-003)
+  min_lots: 1
+  max_position_cost: 14000       # HARD absolute cap: reject if 1 lot costs more
+  # Preferred 1-lot cost band (D-010). Strike selection scores candidates toward
+  # this window; outside it is allowed, just ranked lower. Never overrides the
+  # hard cap above, and never forces a trade that fails a risk gate.
+  preferred_cost_min: 7000
+  preferred_cost_max: 12000
+  # Per-instrument lot ceiling. SENSEX lot 20 -> 4 lots = 80 qty, matching how you
+  # actually trade. NIFTY lot 65 -> 1 lot, because 2 lots already costs more than
+  # capital at any normal premium. The Rs.14,000 cost cap and the per-trade risk
+  # gate both still apply; whichever binds first wins.
+  max_lots:
+    SENSEX: 4
+    NIFTY: 1
+
+# Strike selection for suggestions (D-010). Picks the contract with the best
+# chance of actually moving, not the cheapest lottery ticket.
+strike_selection:
+  max_atm_offset: 2              # only ATM, ATM+-1, ATM+-2 considered
+  min_open_interest: 0           # 0 = no floor; raise once you have OI baselines
+  min_volume: 0
+  weights:
+    cost_band: 3.0               # inside preferred_cost_min..max
+    atm_proximity: 2.0           # closer to ATM = tighter spread, higher delta
+    open_interest: 1.5           # liquidity: fills near the quoted price
+    volume: 1.0                  # today's participation
+    spread_penalty: 2.0          # wide bid/ask silently eats an r=1200 budget
+
+default_sl_premium_pts:
+  NIFTY: 12
+  SENSEX: 35
+
+instruments:
+  primary: SENSEX
+  secondary: NIFTY
+  chain_depth: 3             # ATM +- N strikes (3 keeps the chain sweep inside rate limits)
+
+week:
+  loss_limit_mult: 2.5
+  red_days_to_paper: 3
+
+llm:
+  min_conf: 70
+  suggest_cap_per_day: 10
+  timeout_s: 10
+  bridge_retries: 2
+  bridge_url: "${CLAUDE_BRIDGE_URL}"
+  groq_model: "llama-3.3-70b-versatile"
+  groq_fallback_model: "openai/gpt-oss-120b"
+
+data:
+  tick_staleness_degraded_s: 10
+  tick_staleness_critical_s: 60
+  chain_snapshot_interval_s: 60   # raised: Groww rate limits (D-013)
+  oi_diff_lookback_min: 30
+  recon_interval_s: 15
+  pnl_tick_interval_s: 2
+
+guardian:
+  # hybrid = websocket preferred for immediacy, REST poll as the safety net.
+  # ws        -> stream primary, poll every 6th cycle (~30s) as a backstop
+  # rest_poll -> no stream at all, poll only
+  # Both dedupe by broker order id, so a trade is never counted twice. D-001.
+  detection: hybrid          # hybrid | ws | rest_poll
+  poll_interval_s: 2          # REST fallback lag; WS is instant when it delivers
+  # Check at 60s: if no stop is resting, place one. If YOUR stop appears later,
+  # guardian cancels its own so only one stop is ever live (yields_to_own_sl).
+  sl_attach_deadline_s: 60
+  # Guardian withdraws its stop the moment it sees one you placed yourself.
+  yield_to_manual_sl: true
+  squareoff_verify_s: 10
+
+events:
+  debounce:
+    LEVEL_BREAK_min: 15
+    VIX_SPIKE_min: 30
+    OI_SHIFT_min: 30
+    MOMENTUM_BURST_min: 20
+  thresholds:
+    level_break_pct: 0.05
+    vix_spike_pct: 5.0
+    oi_shift_pct: 20.0
+    momentum_atr_mult: 2.0
+  times:
+    pre_market: "09:00"
+    opening_range_set: "09:35"
+    midday: "12:30"
+    day_end: "15:35"
+
+push:
+  floor_warning_rupees: 200
+
+mode: LIVE                   # PAPER | LIVE  (go-live gate removed by user decision D-002)

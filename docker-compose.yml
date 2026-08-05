@@ -1,0 +1,41 @@
+services:
+  backend:
+    build: .
+    image: sentinel-backend:latest
+    container_name: sentinel-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Asia/Kolkata
+      SENTINEL_DB: /app/data/sentinel.db
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    expose:
+      - "8000"
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: sentinel-caddy
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./pwa/dist:/srv/pwa:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  caddy_data:
+  caddy_config:

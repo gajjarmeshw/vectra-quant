@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SENTINEL">
+  <title>SENTINEL</title>
+  <!-- Home-screen icon: ink field, paper shield, step knocked out. The glyph stays
+       inside the centre 80% so an iOS/Android mask cannot clip it. -->
+  <rect width="512" height="512" rx="112" fill="#0B0B0A"/>
+  <path d="M256 118l128 38v110c0 72-50 127-128 158-78-31-128-86-128-158V156Z" fill="#FEFEFD"/>
+  <path d="M202 296h40v-40h40v-40h40" fill="none" stroke="#0B0B0A" stroke-width="24"
+        stroke-linecap="square"/>
+</svg>

@@ -1,0 +1,38 @@
+# PWA is served statically; the API and WS are proxied to the backend.
+# SITE_ADDRESS is <elastic-ip>.sslip.io in production, which resolves to the IP
+# and gets a real Let's Encrypt certificate. iOS Web Push refuses self-signed.
+
+{$SITE_ADDRESS} {
+	encode gzip zstd
+
+	@api path /state /health /config /squareoff /killswitch /live /suggestions/* /push/* /report/*
+	handle @api {
+		reverse_proxy backend:8000 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		root * /srv/pwa
+		try_files {path} /index.html
+		file_server
+
+		header /assets/* Cache-Control "public, max-age=31536000, immutable"
+		header /sw.js Cache-Control "no-cache"
+		header /index.html Cache-Control "no-cache"
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 10mb
+			roll_keep 3
+		}
+	}
+}
