@@ -32,6 +32,10 @@ class EventKind(str, Enum):
     POSITION_EVENT = "POSITION_EVENT"
     MIDDAY_CHECK = "MIDDAY_CHECK"
     DAY_END = "DAY_END"
+    OPTION_WALL_TEST = "OPTION_WALL_TEST"
+    OPTION_WALL_BREAK = "OPTION_WALL_BREAK"
+    REGIME_SHIFT = "REGIME_SHIFT"
+    PCR_EXTREME = "PCR_EXTREME"
 
 
 @dataclass
@@ -55,6 +59,10 @@ DEFAULT_DEBOUNCE_MIN = {
     EventKind.OI_SHIFT: 30,
     EventKind.MOMENTUM_BURST: 20,
     EventKind.POSITION_EVENT: 5,
+    EventKind.OPTION_WALL_TEST: 20,
+    EventKind.OPTION_WALL_BREAK: 20,
+    EventKind.REGIME_SHIFT: 30,
+    EventKind.PCR_EXTREME: 45,
 }
 
 
@@ -257,6 +265,97 @@ class EventEngine:
                     "pnl_pct_of_target": round(pnl_pct_of_target, 1),
                     "near_sl": near_sl},
         ))]
+
+    # ------------------------------------------------------------------ institutional detectors
+    def check_option_wall_events(
+        self, instrument: str, spot: float, walls: Any, prev_spot: float | None = None,
+    ) -> list[Event]:
+        out: list[Event] = []
+        if spot <= 0 or not walls or not getattr(walls, "call_wall", 0):
+            return out
+
+        call_w = getattr(walls, "call_wall", 0.0)
+        put_w = getattr(walls, "put_wall", 0.0)
+
+        # 1. Option Wall Tests (inside range fade opportunity)
+        if hasattr(walls, "is_testing_call_wall") and walls.is_testing_call_wall(0.2):
+            key = f"{instrument}:call_wall_test:{call_w}"
+            if not self._debounced(EventKind.OPTION_WALL_TEST, key):
+                out.append(self._emit(Event(
+                    kind=EventKind.OPTION_WALL_TEST, instrument=instrument, key=key,
+                    detail={"wall": "CALL", "strike": call_w, "spot": round(spot, 2),
+                            "dist_pct": getattr(walls, "dist_call_wall_pct", 0.0),
+                            "bias": "resistance_fade"},
+                )))
+
+        if hasattr(walls, "is_testing_put_wall") and walls.is_testing_put_wall(0.2):
+            key = f"{instrument}:put_wall_test:{put_w}"
+            if not self._debounced(EventKind.OPTION_WALL_TEST, key):
+                out.append(self._emit(Event(
+                    kind=EventKind.OPTION_WALL_TEST, instrument=instrument, key=key,
+                    detail={"wall": "PUT", "strike": put_w, "spot": round(spot, 2),
+                            "dist_pct": getattr(walls, "dist_put_wall_pct", 0.0),
+                            "bias": "support_fade"},
+                )))
+
+        # 2. Option Wall Break (trapped sellers hedging in panic = momentum fuel)
+        if prev_spot is not None and prev_spot > 0:
+            if prev_spot <= call_w < spot:
+                key = f"{instrument}:call_wall_break:{call_w}"
+                if not self._debounced(EventKind.OPTION_WALL_BREAK, key):
+                    out.append(self._emit(Event(
+                        kind=EventKind.OPTION_WALL_BREAK, instrument=instrument, key=key,
+                        detail={"wall": "CALL", "strike": call_w, "spot": round(spot, 2),
+                                "prev_spot": round(prev_spot, 2),
+                                "thesis": "trapped call writers forced to cover"},
+                    )))
+            elif prev_spot >= put_w > spot:
+                key = f"{instrument}:put_wall_break:{put_w}"
+                if not self._debounced(EventKind.OPTION_WALL_BREAK, key):
+                    out.append(self._emit(Event(
+                        kind=EventKind.OPTION_WALL_BREAK, instrument=instrument, key=key,
+                        detail={"wall": "PUT", "strike": put_w, "spot": round(spot, 2),
+                                "prev_spot": round(prev_spot, 2),
+                                "thesis": "trapped put writers forced to cover"},
+                    )))
+
+        return out
+
+    def check_regime_shift(
+        self, instrument: str, current_regime: str, prev_regime: str | None = None,
+    ) -> list[Event]:
+        if not current_regime or current_regime == prev_regime:
+            return []
+        if current_regime in ("LONG_BUILDUP", "SHORT_BUILDUP"):
+            key = f"{instrument}:regime:{current_regime}"
+            if self._debounced(EventKind.REGIME_SHIFT, key):
+                return []
+            return [self._emit(Event(
+                kind=EventKind.REGIME_SHIFT, instrument=instrument, key=key,
+                detail={"regime": current_regime, "prev_regime": prev_regime or "UNKNOWN"},
+            ))]
+        return []
+
+    def check_pcr_extreme(self, instrument: str, pcr: float) -> list[Event]:
+        if pcr <= 0:
+            return []
+        if pcr < 0.7:
+            key = f"{instrument}:pcr_oversold"
+            if self._debounced(EventKind.PCR_EXTREME, key):
+                return []
+            return [self._emit(Event(
+                kind=EventKind.PCR_EXTREME, instrument=instrument, key=key,
+                detail={"pcr": round(pcr, 2), "sentiment": "FEAR_OVERSOLD", "bias": "contrarian_bounce"},
+            ))]
+        elif pcr > 1.3:
+            key = f"{instrument}:pcr_overbought"
+            if self._debounced(EventKind.PCR_EXTREME, key):
+                return []
+            return [self._emit(Event(
+                kind=EventKind.PCR_EXTREME, instrument=instrument, key=key,
+                detail={"pcr": round(pcr, 2), "sentiment": "COMPLACENT_OVERBOUGHT", "bias": "exhaustion_fade"},
+            ))]
+        return []
 
     # ------------------------------------------------------------------ bookkeeping
     def mark_dispatched(self, ev: Event) -> None:

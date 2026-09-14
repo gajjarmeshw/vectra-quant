@@ -51,8 +51,24 @@ export const setPreset = (preset) =>
 export const runBacktest = (params) =>
   req('/report/backtest', { method: 'POST', body: JSON.stringify(params) });
 
-export const refreshZerodhaToken = () =>
-  req('/broker/refresh-token', { method: 'POST' });
+export const getStrategies = () => req('/strategies');
+
+export const runStrategyBacktest = (params) =>
+  req('/strategies/backtest', { method: 'POST', body: JSON.stringify(params) });
+
+export const setActiveStrategy = (payload) =>
+  req('/strategies/active', { method: 'POST', body: JSON.stringify(payload) });
+
+export const updateDhanToken = (payload = {}) =>
+  req('/broker/refresh-token', { method: 'POST', body: JSON.stringify(payload) });
+
+export const getDataStatus = () => req('/data/status');
+
+export const fetchCandles = (params) =>
+  req('/data/fetch-candles', { method: 'POST', body: JSON.stringify(params) });
+
+export const refreshChain = () =>
+  req('/data/refresh-chain', { method: 'POST' });
 
 export const setKillSwitch = (action, opts = {}) =>
   req('/killswitch', { method: 'POST', body: JSON.stringify({ action, ...opts }) });

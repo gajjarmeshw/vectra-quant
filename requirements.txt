@@ -15,7 +15,7 @@ py-vapid==1.9.2
 jsonschema==4.23.0
 python-json-logger==3.2.1
 boto3==1.35.92
-kiteconnect>=5.0.0
+dhanhq==2.2.0
 
 # dev
 pytest==8.3.4

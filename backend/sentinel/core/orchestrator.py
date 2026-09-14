@@ -196,11 +196,14 @@ class Orchestrator:
             self._persist(curve=False)
 
     def can_enter(self, *, confidence: int | None = None, is_expiry_day: bool = False,
-                  proposed_risk: float | None = None, when: datetime | None = None):
+                  proposed_risk: float | None = None, when: datetime | None = None,
+                  active_trades: list = None, proposed_instrument: str = "", proposed_strategy: str = ""):
         with self._lock:
             return self.engine.can_enter(
                 when or now_ist(), confidence=confidence,
                 is_expiry_day=is_expiry_day, proposed_risk=proposed_risk,
+                active_trades=active_trades, week_locked=self.week_locked,
+                proposed_instrument=proposed_instrument, proposed_strategy=proposed_strategy,
             )
 
     def set_kill_switch(self, on: bool) -> None:

@@ -59,8 +59,8 @@ def _env_first(*names: str, default: str = "") -> str:
 class Secrets:
     groww_api_key: str = ""
     groww_totp_seed: str = ""
-    zerodha_api_key: str = ""
-    zerodha_access_token: str = ""
+    dhan_client_id: str = ""
+    dhan_access_token: str = ""
     groq_api_key: str = ""
     claude_bridge_url: str = ""
     vapid_public: str = ""
@@ -76,8 +76,8 @@ class Secrets:
         return Secrets(
             groww_api_key=_env_first("GROWW_API_KEY", "GROWW_TOTP_TOKEN"),
             groww_totp_seed=_env_first("GROWW_TOTP_SEED", "GROWW_TOTP_CODE"),
-            zerodha_api_key=_env_first("ZERODHA_API_KEY"),
-            zerodha_access_token=_env_first("ZERODHA_ACCESS_TOKEN"),
+            dhan_client_id=_env_first("DHAN_CLIENT_ID"),
+            dhan_access_token=_env_first("DHAN_ACCESS_TOKEN"),
             groq_api_key=_env_first("GROQ_API_KEY", "GROQ_KEY"),
             claude_bridge_url=_env_first("CLAUDE_BRIDGE_URL"),
             vapid_public=_env_first("VAPID_PUBLIC"),
@@ -168,6 +168,13 @@ class InstrumentsCfg:
 
 
 @dataclass(frozen=True)
+class AlgoCfg:
+    enabled: bool = True
+    active_strategy: str = "institutional_breakout"
+    auto_execute: bool = False
+
+
+@dataclass(frozen=True)
 class Settings:
     raw: dict[str, Any]
     risk: RiskConfig
@@ -179,7 +186,8 @@ class Settings:
     events: EventsCfg
     instruments: InstrumentsCfg
     secrets: Secrets
-    broker_name: str = "groww"
+    algo: AlgoCfg = field(default_factory=AlgoCfg)
+    broker_name: str = "dhan"
     mode: str = "LIVE"
     floor_warning_rupees: float = 200.0
     tz: str = "Asia/Kolkata"
@@ -315,7 +323,12 @@ def _build(raw: dict[str, Any], secrets: Secrets) -> Settings:
             chain_depth=int((raw.get("instruments") or {}).get("chain_depth", 5)),
         ),
         secrets=secrets,
-        broker_name=str(os.getenv("BROKER_NAME") or raw.get("broker") or "groww").lower(),
+        algo=AlgoCfg(
+            enabled=bool((raw.get("algo") or {}).get("enabled", True)),
+            active_strategy=str((raw.get("algo") or {}).get("active_strategy", "institutional_breakout")),
+            auto_execute=bool((raw.get("algo") or {}).get("auto_execute", False)),
+        ),
+        broker_name=str(os.getenv("BROKER_NAME") or raw.get("broker") or "dhan").lower(),
         mode=str(raw.get("mode", "LIVE")).upper(),
         floor_warning_rupees=float((raw.get("push") or {}).get("floor_warning_rupees", 200)),
         tz=os.getenv("TZ", "Asia/Kolkata"),

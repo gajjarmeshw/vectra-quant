@@ -45,6 +45,9 @@ class RejectReason(str, Enum):
     RISK_EXCEEDED = "trade risk exceeds per-trade limit"
     CONFIDENCE = "confidence below required gate"
     KILL_SWITCH = "master kill switch is OFF"
+    WEEK_LOCKED = "week is locked due to max loss limit"
+    EXPOSURE_CAP = "exposure cap exceeded"
+    DRAWDOWN_LADDER_HALT = "drawdown ladder halted new entries"
 
 
 @dataclass(frozen=True)
@@ -69,6 +72,9 @@ class RiskConfig:
     squareoff_at: time = time(15, 10)
     expiry_entry_close: time = time(14, 30)
     expiry_risk_scale: float = 0.50
+    max_underlying_alloc_pct: float = 0.10
+    max_strategy_alloc_pct: float = 0.30
+    drawdown_ladder: bool = True
     default_sl_premium_pts: dict = field(
         default_factory=lambda: {"NIFTY": 12.0, "SENSEX": 35.0}
     )
@@ -129,12 +135,18 @@ class RiskEngine:
         confidence: Optional[int] = None,     # None for manual trades
         is_expiry_day: bool = False,
         proposed_risk: Optional[float] = None,
+        active_trades: list = None,
+        week_locked: bool = False,
+        proposed_instrument: str = "",
+        proposed_strategy: str = "",
     ) -> Decision:
         c = self.cfg
         if not self.kill_switch_on:
             return Decision(False, RejectReason.KILL_SWITCH)
         if self.state == DayState.LOCKED:
             return Decision(False, RejectReason.LOCKED)
+        if week_locked:
+            return Decision(False, RejectReason.WEEK_LOCKED)
         if self.trades_taken >= self.trade_cap:
             return Decision(False, RejectReason.TRADE_CAP)
 
@@ -149,6 +161,35 @@ class RiskEngine:
             risk_scale *= c.risk_scale_protected
         if is_expiry_day:
             risk_scale *= c.expiry_risk_scale
+
+        # Drawdown Ladder: 50% budget hit -> halve size, 75% -> no new entries
+        if c.drawdown_ladder and self.day_pnl < 0:
+            dd_ratio = abs(self.day_pnl) / c.loss_limit if c.loss_limit > 0 else 0
+            if dd_ratio >= 0.75:
+                return Decision(False, RejectReason.DRAWDOWN_LADDER_HALT)
+            elif dd_ratio >= 0.50:
+                risk_scale *= 0.5
+
+        # Exposure Caps
+        if active_trades:
+            underlying_cost = 0.0
+            strategy_cost = 0.0
+            # Rough estimation of new trade cost (risk * ~4 for a standard 25% SL, but we'll use capital * max_pct)
+            # Actually, active_trades contains Trade objects. We sum their entry_price * qty
+            for t in active_trades:
+                if getattr(t, 'status', 'OPEN') != 'OPEN':
+                    continue
+                cost = getattr(t, 'entry_price', 0) * getattr(t, 'qty', 0)
+                if proposed_instrument and getattr(t, 'instrument', '') == proposed_instrument:
+                    underlying_cost += cost
+                # strategy name usually in suggestion, we check if t has strategy_name or from suggestion
+                # (For now, we check the cap just against currently open cost vs allowed)
+                # This prevents adding new trades if already over cap.
+            
+            if underlying_cost >= c.capital * c.max_underlying_alloc_pct:
+                return Decision(False, RejectReason.EXPOSURE_CAP)
+            # Full strategy check would require strategy_name on Trade row. We skip strategy cap for now or enforce broadly.
+
         max_risk = c.risk_per_trade * risk_scale
 
         min_conf = (

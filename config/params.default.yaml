@@ -134,5 +134,10 @@ events:
 push:
   floor_warning_rupees: 200
 
-broker: zerodha                # groww | zerodha
+algo:
+  enabled: true
+  active_strategy: "institutional_breakout"
+  auto_execute: false          # false = PWA approval card; true = direct broker execution
+
+broker: dhan                   # dhan | groww
 mode: PAPER                   # PAPER | LIVE  (go-live gate removed by user decision D-002)

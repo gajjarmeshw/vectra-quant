@@ -52,22 +52,22 @@ INDEX_SYMBOLS = {
 
 
 def build_broker(settings: Any):
-    """LIVE -> Selected Broker (Groww/Zerodha). PAPER -> Sim wrapping broker for real market data.
+    """LIVE -> Selected Broker (Dhan/Groww). PAPER -> Sim wrapping broker for real market data.
 
     The three-red-days rule (design §4.6) is enforced HERE. Without this the flag
     was set, logged and pushed to the trader, then ignored at boot.
     """
     from sentinel.core.orchestrator import FORCE_PAPER_KEY
 
-    broker_name = getattr(settings, "broker_name", "groww").lower()
-    if broker_name == "zerodha":
-        from sentinel.brokers.zerodha import ZerodhaAdapter
-        log.info("Selected broker adapter: Zerodha")
-        live = ZerodhaAdapter(settings.secrets.zerodha_api_key, settings.secrets.zerodha_access_token)
-    else:
+    broker_name = getattr(settings, "broker_name", "dhan").lower()
+    if broker_name == "groww":
         from sentinel.brokers.groww import GrowwAdapter
         log.info("Selected broker adapter: Groww")
         live = GrowwAdapter(settings.secrets.groww_api_key, settings.secrets.groww_totp_seed)
+    else:
+        from sentinel.brokers.dhan import DhanAdapter
+        log.info("Selected broker adapter: DhanHQ")
+        live = DhanAdapter(settings.secrets.dhan_client_id, settings.secrets.dhan_access_token)
 
     forced = db.state_get(FORCE_PAPER_KEY, "") == "1"
     if forced:
@@ -235,11 +235,22 @@ def _backfill_candles(st: Any) -> None:
         try:
             # 2400 minutes reaches the previous session, which PDH/PDL need.
             candles = st.broker.get_candles(sym, "1m", 2400, segment="CASH")
+            c_dicts = [
+                {
+                    "timestamp": c.ts.isoformat(),
+                    "open": c.open,
+                    "high": c.high,
+                    "low": c.low,
+                    "close": c.close,
+                    "volume": c.volume
+                }
+                for c in candles
+            ]
         except Exception as exc:
             log.warning("candle backfill failed", extra={"symbol": sym,
                                                          "error": str(exc)[:160]})
             continue
-        n = st.candles.backfill(sym, candles)
+        n = st.candles.backfill(sym, c_dicts)
         log.info("candles backfilled", extra={"symbol": sym, "bars": n})
 
 
@@ -570,6 +581,73 @@ def _dispatch(st: Any, ev: Any) -> None:
     )
     st.events.attach_snapshot(ev, payload)
 
+    # 1. Dynamic Algo Strategy Evaluation (Deterministic Institutional Algos)
+    algo_handled = False
+    if getattr(st.settings, "algo", None) and st.settings.algo.enabled:
+        try:
+            import uuid
+
+            from sentinel.strategies.base import StrategyContext
+            from sentinel.strategies.registry import get_strategy
+
+            strat = get_strategy(st.settings.algo.active_strategy)
+            fii_lean = "FLAT"
+            try:
+                import json
+                from sentinel.db import state_get
+                drift_raw = state_get("FII_NET_INDEX_FUTURES", "[]")
+                drift_data = json.loads(drift_raw)
+                if drift_data and len(drift_data) > 0:
+                    latest_net = drift_data[-1].get("net", 0)
+                    if latest_net > 10000:
+                        fii_lean = "LONG"
+                    elif latest_net < -10000:
+                        fii_lean = "SHORT"
+            except Exception:
+                pass
+
+            ctx = StrategyContext(
+                instrument=name,
+                spot=spot,
+                candles_1m=day,
+                candles_5m=st.candles.series(sym, "5m", 12),
+                opening_range=(orange[0], orange[1]) if orange else None,
+                prev_day_range=(pd[0], pd[1]) if pd else None,
+                atr=st.candles.atr(sym),
+                walls=st.chain.get_walls(name),
+                regime=st.chain.get_regime(name),
+                vix=vix,
+                current_time=now_ist().time(),
+                is_expiry_day=name in expiring,
+                active_position=bool(position_rows),
+                fii_lean=fii_lean,
+            )
+            sig = strat.evaluate(ctx)
+            if sig:
+                gate, queued = st.lifecycle.apply_gates(
+                    sig.to_suggestion_payload(), spot=spot, is_expiry_day=name in expiring
+                )
+                if gate.passed and queued is not None:
+                    st.lifecycle.enqueue(
+                        queued, event_kind=ev.kind.value, model=f"algo:{strat.name}", event_id=ev.row_id
+                    )
+                    algo_handled = True
+                    if st.settings.algo.auto_execute:
+                        log.warning("AUTO-PILOT ALGO: auto-approving order for %s", strat.name)
+                        st.lifecycle.approve(queued.id, idempotency_key=str(uuid.uuid4()))
+                else:
+                    st.lifecycle.record_gated(
+                        sig.to_suggestion_payload(), gate.reason if gate else "gated",
+                        event_kind=ev.kind.value, model=f"algo:{strat.name}"
+                    )
+        except Exception as exc:
+            log.exception("Dynamic algo strategy evaluation error: %s", exc)
+
+    if algo_handled:
+        st.events.mark_dispatched(ev)
+        return
+
+    # 2. Fallback to LLM
     outcome = st.llm.suggest(payload, event_kind=ev.kind.value)
     st.events.mark_dispatched(ev)
     if not outcome.ok or outcome.data is None:

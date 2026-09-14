@@ -132,5 +132,5 @@ events:
 push:
   floor_warning_rupees: 200
 
-broker: zerodha                 # groww | zerodha
+broker: dhan                    # dhan | groww
 mode:  PAPER               # PAPER | LIVE  (go-live gate removed by user decision D-002)

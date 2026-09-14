@@ -1,11 +1,10 @@
-/* Fonts self-hosted via @fontsource — an offline PWA must not depend on a CDN
-   (build plan Appendix C). */
-@import '@fontsource-variable/bricolage-grotesque';
-@import '@fontsource/geist-sans/400.css';
-@import '@fontsource/geist-sans/500.css';
-@import '@fontsource/geist-mono/400.css';
-@import '@fontsource/geist-mono/500.css';
-@import '@fontsource/geist-mono/600.css';
+/* Production UI: Professional clean typography */
+@import '@fontsource/outfit/400.css';
+@import '@fontsource/outfit/600.css';
+@import '@fontsource/outfit/700.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
 
 @tailwind base;
 @tailwind components;
@@ -17,10 +16,11 @@
     background: theme('colors.paper');
   }
   body {
-    @apply bg-paper text-ink font-body text-body antialiased;
+    @apply bg-paper text-ink font-body tracking-tight antialiased selection:bg-ai/30;
     /* Dynamic Island / home bar */
     padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
     overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
   }
   /* Every number is mono + tabular. Non-negotiable per §1 typography. */
   .num {
@@ -35,39 +35,40 @@
 
 @layer components {
   .card {
-    @apply bg-card border border-line rounded-card p-cardpad;
+    @apply bg-card border border-line shadow-sm rounded-card p-cardpad;
   }
   .eyebrow {
-    @apply num text-eyebrow uppercase text-muted;
+    @apply num text-eyebrow uppercase text-muted tracking-widest font-medium;
   }
   .chip {
-    @apply num text-chip px-2.5 py-1 rounded-pill border border-line;
+    @apply num text-chip px-2.5 py-1 rounded-pill border border-line shadow-sm;
   }
   .btn {
-    @apply font-disp text-btn font-semibold w-full rounded-pill transition-transform duration-150;
+    @apply font-disp text-btn font-semibold w-full rounded-pill transition-all duration-150 shadow-sm;
     padding-top: 17px;
     padding-bottom: 17px;
   }
   .btn:active:not(:disabled) {
-    transform: scale(0.98);
+    transform: scale(0.97);
   }
   .btn:disabled {
-    opacity: 0.4;
+    opacity: 0.5;
   }
   .btn-primary {
-    @apply btn bg-ink text-white;
+    @apply btn bg-ai text-white shadow-md border-0 hover:brightness-110;
   }
   .btn-ghost {
-    @apply btn bg-white text-ink border border-line;
+    @apply btn bg-line-soft text-ink border border-line hover:brightness-110;
   }
   .btn-danger {
-    @apply btn bg-red text-white;
+    @apply btn bg-red text-white shadow-md border-0 hover:brightness-110;
   }
   .btn-dashed {
-    @apply btn bg-white text-muted border border-dashed border-line;
+    @apply btn bg-transparent text-muted border border-dashed border-line;
   }
   .tabbar {
-    @apply fixed bottom-0 inset-x-0 border-t border-line bg-white/85 backdrop-blur-md;
+    @apply fixed bottom-0 inset-x-0 border-t border-line bg-card shadow-[0_-4px_24px_rgba(0,0,0,0.3)];
+
     height: calc(86px + env(safe-area-inset-bottom));
     padding-bottom: env(safe-area-inset-bottom);
   }

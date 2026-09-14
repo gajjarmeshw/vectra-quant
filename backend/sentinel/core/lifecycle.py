@@ -116,7 +116,11 @@ class Lifecycle:
         side = str(payload.get("direction", "")).upper()
 
         conf = int(payload.get("confidence", 0))
-        decision = self.orch.can_enter(confidence=conf, is_expiry_day=is_expiry_day)
+        decision = self.orch.can_enter(
+            confidence=conf, is_expiry_day=is_expiry_day,
+            active_trades=self.open_trades(),
+            proposed_instrument=instrument,
+        )
         if not decision.allowed:
             # design_spec §3.2 wants the numbers on the GATED chip, not just a label.
             if decision.reason is RejectReason.CONFIDENCE:
@@ -320,6 +324,8 @@ class Lifecycle:
             decision = self.orch.can_enter(
                 confidence=q.confidence, is_expiry_day=is_expiry,
                 proposed_risk=None if q.over_risk else q.risk,
+                active_trades=self.open_trades(),
+                proposed_instrument=q.instrument,
             )
             if not decision.allowed:
                 reason = decision.reason.value if decision.reason else "blocked"

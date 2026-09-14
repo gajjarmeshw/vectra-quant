@@ -1,7 +1,9 @@
 /* Shared components. Visual contracts from docs/design_spec.md §2.
    Colour only ever carries meaning: green money, red risk, amber guardian,
    cobalt AI. Everything else is paper/ink/hairline. */
-import React from 'react';
+import React, { useState } from 'react';
+import { motion } from 'framer-motion';
+import { Lock, Target, TrendingUp, AlertCircle, Eye, EyeOff, FileWarning, BarChart2 } from 'lucide-react';
 
 export const rupee = (n, sign = false) => {
   if (n === null || n === undefined || Number.isNaN(n)) return '—';
@@ -32,14 +34,14 @@ export function Card({ children, className = '', accent = false }) {
 
 /* The FSM made visible. Always current, top-right of every screen. */
 export function StateChip({ state, floor }) {
-  const base = 'chip font-medium';
-  if (state === 'LOCKED') return <span className={`${base} bg-red text-white border-red`}>LOCKED</span>;
+  const base = 'chip font-medium bg-line-soft border-line/50 text-white';
+  if (state === 'LOCKED') return <span className={`${base} !bg-red/20 !text-red !border-red/50`}><Lock size={12} className="inline mr-1" />LOCKED</span>;
   if (state === 'EARNED')
-    return <span className={`${base} bg-ink text-white border-ink`}>EARNED · 4th unlocked</span>;
-  if (state === 'PROTECT') return <span className={`${base} bg-ink text-white border-ink`}>PROTECT</span>;
+    return <span className={`${base} !bg-ai/20 !text-ai !border-ai/50`}><Target size={12} className="inline mr-1" />EARNED</span>;
+  if (state === 'PROTECT') return <span className={`${base} !bg-amber/20 !text-amber !border-amber/50`}><AlertCircle size={12} className="inline mr-1" />PROTECT</span>;
   if (state === 'TRAIL')
     return (
-      <span className={`${base} bg-ink text-white border-ink`}>TRAIL · floor {rupee(floor)}</span>
+      <span className={`${base} !bg-green/20 !text-green !border-green/50`}><TrendingUp size={12} className="inline mr-1" />TRAIL</span>
     );
   return <span className={`${base} text-ink-2`}>NORMAL</span>;
 }
@@ -71,32 +73,34 @@ export function DayRail({ dayPnl, floor, target, lossLimit }) {
 
   return (
     <div className="mt-4">
-      <div className="relative h-2 rounded-pill bg-line-soft overflow-visible">
+      <div className="relative h-2.5 rounded-pill bg-line-soft overflow-visible shadow-inner">
         <div
           className="absolute inset-y-0 left-0 rounded-l-pill bg-red-soft"
           style={{
             width: `${lockPct}%`,
             backgroundImage:
-              'repeating-linear-gradient(45deg,#FDEBEC 0 4px,#FBD5D7 4px 8px)',
+              'repeating-linear-gradient(45deg,rgba(255,61,0,0.1) 0 4px,rgba(255,61,0,0.2) 4px 8px)',
           }}
         />
-        <div className="absolute -top-1.5 w-px h-5 bg-ink" style={{ left: `${floorPct}%` }} />
-        <div className="absolute -top-0.5 w-px h-3 bg-muted" style={{ left: `${targetPct}%` }} />
-        <div className="absolute -top-0.5 w-px h-3 bg-muted" style={{ left: `${trailPct}%` }} />
-        <div
-          className="absolute rounded-full border-2 border-white transition-all duration-700"
+        <div className="absolute -top-1.5 w-[2px] h-5 bg-ink " style={{ left: `${floorPct}%` }} />
+        <div className="absolute -top-0.5 w-[2px] h-3.5 bg-muted" style={{ left: `${targetPct}%` }} />
+        <div className="absolute -top-0.5 w-[2px] h-3.5 bg-muted" style={{ left: `${trailPct}%` }} />
+        <motion.div
+          className="absolute rounded-full border-2 border-paper"
+          layout
+          transition={{ type: "spring", stiffness: 100, damping: 20 }}
           style={{
             left: `calc(${dotPct}% - 9px)`,
-            top: '-5px',
+            top: '-4px',
             width: 18,
             height: 18,
-            background: dayPnl >= 0 ? '#0E9F6E' : '#E5484D',
+            background: dayPnl >= 0 ? '#10B981' : '#EF4444',
           }}
         />
       </div>
       <div className="num text-eyebrow text-muted flex justify-between mt-3">
         <span>lock {rupee(-Math.abs(lossLimit))}</span>
-        <span className="text-ink">floor {rupee(floor)}</span>
+        <span className="text-white">floor {rupee(floor)}</span>
         <span>target {rupee(target)}</span>
         <span>trail {rupee(target * 1.3)}</span>
       </div>
@@ -121,23 +125,24 @@ export function SlTrack({ sl, target, ltp, entry }) {
     <div className="mt-5">
       <div
         className="relative h-1.5 rounded-pill"
-        style={{ background: 'linear-gradient(90deg,#FDEBEC,#F2F2EF 40%,#E6F6F0)' }}
+        style={{ background: 'linear-gradient(90deg, rgba(255,61,0,0.3), rgba(255,255,255,0.1) 40%, rgba(0,230,118,0.3))' }}
       >
-        <span className="absolute -top-[5px] w-0.5 h-4 rounded-sm bg-red" style={{ left: '0%' }} />
+        <span className="absolute -top-[5px] w-0.5 h-4 rounded-sm bg-red " style={{ left: '0%' }} />
         {tgt > stop && (
           <span
-            className="absolute -top-[5px] w-0.5 h-4 rounded-sm bg-green"
+            className="absolute -top-[5px] w-0.5 h-4 rounded-sm bg-green "
             style={{ left: '100%' }}
           />
         )}
-        <span
-          className="absolute rounded-full bg-ink border-[3px] border-white transition-all duration-500"
+        <motion.span
+          className="absolute rounded-full bg-paper border-[3px] border-ink"
+          layout
+          transition={{ type: "spring", stiffness: 120, damping: 20 }}
           style={{
             left: `calc(${pct(px)}% - 7px)`,
             top: '-4px',
             width: 14,
             height: 14,
-            boxShadow: '0 1px 4px rgba(0,0,0,.3)',
           }}
         />
       </div>
@@ -211,3 +216,86 @@ export function Banner({ tone = 'amber', children }) {
     </div>
   );
 }
+
+export function InstitutionalPostureCard({ instData, instrument = 'NIFTY', spot = 0 }) {
+  if (!instData) return null;
+
+  const regime = instData.regime || 'NEUTRAL';
+  const callWall = instData.call_wall || 0;
+  const putWall = instData.put_wall || 0;
+  const pcr = instData.pcr || 1.0;
+  const pcrSentiment = instData.pcr_sentiment || 'NORMAL';
+  const distCall = instData.dist_call_wall_pct ?? 0;
+  const distPut = instData.dist_put_wall_pct ?? 0;
+
+  const regimeBadge = {
+    LONG_BUILDUP: { label: 'Long Buildup · Whale Buying', color: 'bg-green-soft text-green border-green-soft' },
+    SHORT_BUILDUP: { label: 'Short Buildup · Whale Selling', color: 'bg-red-soft text-red border-red-soft' },
+    SHORT_COVERING: { label: 'Short Covering · Fades Fast', color: 'bg-amber-soft text-amber border-amber-soft' },
+    LONG_UNWINDING: { label: 'Long Unwinding · Weak Drift', color: 'bg-amber-soft text-amber border-amber-soft' },
+    NEUTRAL: { label: 'Neutral · Consolidation', color: 'bg-line-soft text-ink-2 border-line' },
+  }[regime] || { label: regime, color: 'bg-line-soft text-ink-2 border-line' };
+
+  const pcrBadge = {
+    FEAR_OVERSOLD: { label: 'Fear / Oversold (<0.7)', color: 'text-green' },
+    COMPLACENT_OVERBOUGHT: { label: 'Complacent / Exhaustion (>1.3)', color: 'text-red' },
+    NORMAL: { label: 'Balanced (0.7–1.3)', color: 'text-ink-2' },
+  }[pcrSentiment] || { label: pcrSentiment, color: 'text-ink-2' };
+
+  // Calculate spot position percentage between Put Wall (0%) and Call Wall (100%)
+  const span = callWall - putWall;
+  let pct = 50;
+  if (span > 0 && spot > 0) {
+    pct = Math.min(100, Math.max(0, ((spot - putWall) / span) * 100));
+  }
+
+  return (
+    <Card className="!p-3.5 space-y-2.5 border border-line">
+      <div className="flex items-center justify-between">
+        <Eyebrow>Institutional Shadowing · {instrument}</Eyebrow>
+        <span className={`chip font-medium text-[11px] px-2 py-0.5 rounded-full border ${regimeBadge.color}`}>
+          {regimeBadge.label}
+        </span>
+      </div>
+
+      {/* Expected Range Track: Put Wall -> Spot -> Call Wall */}
+      <div className="space-y-1.5 pt-1">
+        <div className="flex justify-between items-center text-[12px] font-mono">
+          <span className="text-muted">
+            Floor: <b className="text-ink">{putWall ? putWall.toLocaleString('en-IN') : '—'}</b>
+            {distPut > 0 ? ` (+${distPut}%)` : ''}
+          </span>
+          <span className="text-muted font-semibold text-ink">
+            {spot ? spot.toLocaleString('en-IN') : ''}
+          </span>
+          <span className="text-muted">
+            Ceiling: <b className="text-ink">{callWall ? callWall.toLocaleString('en-IN') : '—'}</b>
+            {distCall > 0 ? ` (-${distCall}%)` : ''}
+          </span>
+        </div>
+
+        <div className="relative h-2 bg-line rounded-full overflow-hidden">
+          <div
+            className="absolute top-0 bottom-0 left-0 bg-line-soft"
+            style={{ width: `${pct}%` }}
+          />
+          <div
+            className="absolute top-0 bottom-0 w-2 bg-ai rounded-full -ml-1 shadow-sm"
+            style={{ left: `${pct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* PCR Metric & Sentiment */}
+      <div className="flex justify-between items-center text-[11px] text-muted pt-1 border-t border-line">
+        <span>
+          Put-Call Ratio (PCR): <b className="font-mono text-ink text-[12px]">{pcr.toFixed(2)}</b>
+        </span>
+        <span className={`font-medium ${pcrBadge.color}`}>
+          {pcrBadge.label}
+        </span>
+      </div>
+    </Card>
+  );
+}
+

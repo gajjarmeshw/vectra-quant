@@ -157,6 +157,7 @@ def build_premarket_report(st: Any) -> dict[str, Any]:
     if groq_key:
         try:
             import httpx
+
             from sentinel.llm.prompts import PREMARKET_SYSTEM_PROMPT, build_premarket_prompt
 
             prompt = build_premarket_prompt(

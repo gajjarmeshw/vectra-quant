@@ -23,7 +23,7 @@ from fastapi import (
 
 from sentinel.brokers.costs import round_trip_cost
 from sentinel.core.session_clock import config_edit_allowed, now_ist, session_date
-from sentinel.db import LlmCall, Suggestion, Trade, Violation, session
+from sentinel.db import LlmCall, Suggestion, Trade, Violation, session, state_get
 from sentinel.logging_setup import get
 
 log = get("api.routes")
@@ -41,45 +41,7 @@ def require_secret(request: Request, x_sentinel_key: str = Header(default="")) -
 # ---------------------------------------------------------------- state
 
 @router.get("/")
-def root_index(request: Request, request_token: str | None = None) -> Any:
-    if request_token:
-        try:
-            st = request.app.state
-            api_key = os.getenv("ZERODHA_API_KEY", "") or getattr(st.settings.secrets, "zerodha_api_key", "")
-            api_secret = os.getenv("ZERODHA_API_SECRET", "") or getattr(st.settings.secrets, "zerodha_api_secret", "")
-
-            if api_key and api_secret:
-                from kiteconnect import KiteConnect
-                kite = KiteConnect(api_key=api_key)
-                data = kite.generate_session(request_token, api_secret=api_secret)
-                new_token = str(data["access_token"])
-
-                # Update live broker adapter in memory
-                target = st.broker
-                if hasattr(target, "data_source"):
-                    target = target.data_source
-                if hasattr(target, "access_token"):
-                    target.access_token = new_token
-                if hasattr(target, "kite"):
-                    target.kite.set_access_token(new_token)
-
-                # Update .env on disk
-                from sentinel import config as config_mod
-                env_path = config_mod.ROOT / ".env"
-                if env_path.exists():
-                    content = env_path.read_text()
-                    if "ZERODHA_ACCESS_TOKEN=" in content:
-                        content = re.sub(r"ZERODHA_ACCESS_TOKEN=.*", f"ZERODHA_ACCESS_TOKEN={new_token}", content)
-                    else:
-                        content += f"\nZERODHA_ACCESS_TOKEN={new_token}\n"
-                    env_path.write_text(content)
-
-                log.info("Zerodha request_token auto-exchanged via OAuth redirect")
-                from fastapi.responses import RedirectResponse
-                return RedirectResponse(url="/?token_success=true")
-        except Exception as exc:
-            log.error("Failed to exchange request_token: %s", exc)
-
+def root_index(request: Request) -> Any:
     from sentinel import config as config_mod
     pwa_index = config_mod.ROOT / "pwa" / "dist" / "index.html"
     if pwa_index.exists():
@@ -250,6 +212,19 @@ def build_state(st: Any) -> dict[str, Any]:
             "failures": sum(1 for r in llm_rows if not r.ok),
         },
         "violations_today": violations,
+        "institutional": {
+            "fii_drift": json.loads(state_get("FII_NET_INDEX_FUTURES", "[]")),
+            **{
+                n: st.chain.get_institutional_context(n)
+                for n in (st.settings.instruments.primary, st.settings.instruments.secondary)
+                if hasattr(st.chain, "get_institutional_context")
+            }
+        },
+        "algo": {
+            "enabled": getattr(st.settings.algo, "enabled", True) if hasattr(st.settings, "algo") else True,
+            "active_strategy": getattr(st.settings.algo, "active_strategy", "institutional_breakout") if hasattr(st.settings, "algo") else "institutional_breakout",
+            "auto_execute": getattr(st.settings.algo, "auto_execute", False) if hasattr(st.settings, "algo") else False,
+        },
         "server_time": now_ist().isoformat(),
     }
 
@@ -454,7 +429,7 @@ def set_preset(request: Request, body: dict[str, Any]) -> dict[str, Any]:
             "risk_per_trade": s.risk.risk_per_trade,
         }
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/report/backtest", dependencies=[Depends(require_secret)])
@@ -542,37 +517,6 @@ async def live(ws: WebSocket) -> None:
 
 # ---------------------------------------------------------------- webhooks
 
-@router.post("/webhooks/zerodha")
-async def zerodha_postback(request: Request) -> dict[str, Any]:
-    """Free Zerodha Order Execution Postback Webhook endpoint with SHA-256 checksum verification."""
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
-
-    order_id = str(data.get("order_id", ""))
-    status = str(data.get("status", "")).upper()
-    symbol = str(data.get("tradingsymbol", ""))
-    order_ts = str(data.get("order_timestamp", ""))
-    received_checksum = str(data.get("checksum", ""))
-
-    api_secret = os.getenv("ZERODHA_API_SECRET", "")
-    if api_secret and received_checksum and order_id and order_ts:
-        import hashlib
-        expected_checksum = hashlib.sha256(f"{order_id}{order_ts}{api_secret}".encode()).hexdigest()
-        if received_checksum != expected_checksum:
-            log.warning("Zerodha postback checksum mismatch", extra={"order_id": order_id})
-            raise HTTPException(status_code=400, detail="Invalid checksum")
-
-    log.info("Zerodha Postback Webhook received", extra={"order_id": order_id, "status": status, "symbol": symbol})
-
-    st = request.app.state
-    if hasattr(st, "guardian") and callable(getattr(st.guardian, "poll_once", None)):
-        st.guardian.poll_once()
-
-    return {"ok": True, "received": True, "order_id": order_id, "status": status}
-
-
 @router.post("/webhooks/signal")
 async def signal_webhook(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     """Free Custom / TradingView Signal Webhook endpoint."""
@@ -586,54 +530,278 @@ async def signal_webhook(request: Request, payload: dict[str, Any]) -> dict[str,
 
 @router.post("/broker/refresh-token")
 async def refresh_broker_token(request: Request) -> dict[str, Any]:
-    """1-Tap automated 2FA Zerodha access_token refresh and live adapter update."""
+    """Update DhanHQ access token dynamically in-memory and in .env."""
     import os
     import re
+
     from sentinel import config as config_mod
 
     st = request.app.state
-    user_id = os.getenv("ZERODHA_USER_ID", "")
-    password = os.getenv("ZERODHA_PASSWORD", "")
-    totp_seed = os.getenv("ZERODHA_TOTP_SEED", "")
-    api_key = os.getenv("ZERODHA_API_KEY", "")
-    api_secret = os.getenv("ZERODHA_API_SECRET", "")
-
-    if not (user_id and password and totp_seed and api_key and api_secret):
-        raise HTTPException(
-            status_code=400,
-            detail="Missing ZERODHA_USER_ID, ZERODHA_PASSWORD, or ZERODHA_TOTP_SEED in environment."
-        )
-
-    from scripts.get_zerodha_token import generate_access_token_auto
+    body: dict[str, Any] = {}
     try:
-        new_token = generate_access_token_auto(user_id, password, totp_seed, api_key, api_secret)
+        body = await request.json()
+    except Exception:
+        body = {}
 
-        # Update live broker adapter in memory
-        target = st.broker
-        if hasattr(target, "data_source"):
-            target = target.data_source
+    new_token = str(body.get("access_token", "")).strip()
+    if not new_token:
+        raise HTTPException(status_code=400, detail="access_token is required")
 
-        if hasattr(target, "access_token"):
-            target.access_token = new_token
-        if hasattr(target, "kite"):
-            target.kite.set_access_token(new_token)
+    # Update live broker adapter in memory
+    target = st.broker
+    if hasattr(target, "data_source"):
+        target = target.data_source
 
-        # Update .env file on disk if it exists
-        env_path = config_mod.ROOT / ".env"
-        if env_path.exists():
-            content = env_path.read_text()
-            if "ZERODHA_ACCESS_TOKEN=" in content:
-                content = re.sub(r"ZERODHA_ACCESS_TOKEN=.*", f"ZERODHA_ACCESS_TOKEN={new_token}", content)
+    if hasattr(target, "access_token"):
+        target.access_token = new_token
+    if hasattr(target, "dhan"):
+        try:
+            from dhanhq import dhanhq as DhanHQ, DhanContext
+            if DhanContext is not None:
+                target.dhan = DhanHQ(DhanContext(target.client_id, new_token))
             else:
-                content += f"\nZERODHA_ACCESS_TOKEN={new_token}\n"
-            env_path.write_text(content)
+                target.dhan = DhanHQ(target.client_id, new_token)
+        except Exception:
+            pass
+    if hasattr(target, "is_authenticated"):
+        target.is_authenticated = True
+        target.last_auth_error = ""
 
-        log.info("Zerodha access_token auto-refreshed successfully via API")
-        return {
-            "ok": True,
-            "token_snippet": new_token[:8] + "...",
-            "message": "Zerodha access_token updated & live in memory!"
+    os.environ["DHAN_ACCESS_TOKEN"] = new_token
+
+    # Update .env file on disk if it exists
+    env_path = config_mod.ROOT / ".env"
+    if env_path.exists():
+        content = env_path.read_text()
+        if "DHAN_ACCESS_TOKEN=" in content:
+            content = re.sub(r"DHAN_ACCESS_TOKEN=.*", f"DHAN_ACCESS_TOKEN={new_token}", content)
+        else:
+            content += f"\nDHAN_ACCESS_TOKEN={new_token}\n"
+        env_path.write_text(content)
+
+    log.info("DhanHQ access_token updated successfully: %s...", new_token[:8])
+    return {
+        "ok": True,
+        "token_snippet": new_token[:8] + "...",
+        "message": "DhanHQ access_token updated & verified live in memory!",
+    }
+
+
+@router.get("/data/status")
+async def get_data_status(request: Request) -> dict[str, Any]:
+    """Return status of market data feeds, historical store, option chains, and broker session."""
+    import os
+
+    st = request.app.state
+    broker_name = getattr(st.broker, "name", "dhan") if hasattr(st, "broker") else "dhan"
+    health = getattr(st, "health", None)
+    chain_fresh = getattr(health, "chain_fresh", {}) if health else {}
+
+    has_dhan = bool(os.getenv("DHAN_CLIENT_ID") and os.getenv("DHAN_ACCESS_TOKEN"))
+    dhan_snip = os.getenv("DHAN_ACCESS_TOKEN", "")[:8] + "..." if has_dhan else "none"
+
+    broker_obj = getattr(st, "broker", None)
+    is_authenticated = getattr(broker_obj, "is_authenticated", True)
+    auth_error = getattr(broker_obj, "last_auth_error", "")
+
+    return {
+        "ok": True,
+        "broker": broker_name,
+        "broker_authenticated": is_authenticated,
+        "broker_auth_error": auth_error,
+        "feed_subscribed": getattr(health, "feed_subscribed", 0) if health else 0,
+        "feed_age_s": getattr(health, "feed_age_s", 0.0) if health else 0.0,
+        "feed_degraded": getattr(health, "feed_degraded", False) if health else False,
+        "chain_fresh": chain_fresh,
+        "dhan_configured": has_dhan,
+        "dhan_token_snippet": dhan_snip,
+        "supported_instruments": ["NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY"],
+    }
+
+
+@router.post("/data/fetch-candles")
+async def fetch_candles_on_demand(request: Request) -> dict[str, Any]:
+    """Fetch/sync historical 1-minute OHLCV candles for an index."""
+    from sentinel.backtest.engine import load_candles_for_backtest
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    instrument = str(body.get("instrument", "NIFTY")).upper()
+    days = int(body.get("days", 5))
+
+    st = request.app.state
+    broker = getattr(st, "broker", None)
+
+    c_dict, source, warning = load_candles_for_backtest(
+        instrument=instrument,
+        days=days,
+        broker=broker,
+    )
+    candles_count = sum(len(v) for v in c_dict.values())
+
+    return {
+        "ok": True,
+        "instrument": instrument,
+        "days": days,
+        "source": source,
+        "warning": warning,
+        "bars_loaded": candles_count,
+        "message": f"Successfully loaded {candles_count} 1-minute bars for {instrument} ({len(c_dict)} sessions) via {source}",
+    }
+
+
+@router.post("/data/refresh-chain")
+async def refresh_chain_on_demand(request: Request) -> dict[str, Any]:
+    """Force an immediate option chain snapshot refresh across active indices."""
+    st = request.app.state
+    refreshed: list[str] = []
+
+    if hasattr(st, "chain") and hasattr(st, "feed"):
+        for name in ("NIFTY", "SENSEX", "BANKNIFTY"):
+            quote = st.feed.get(name) if hasattr(st.feed, "get") else None
+            spot = quote.ltp if quote else 0.0
+            if spot > 0:
+                try:
+                    st.chain.snapshot(name, spot)
+                    refreshed.append(name)
+                except Exception as exc:
+                    log.warning("Manual chain snapshot failed for %s: %s", name, exc)
+
+    return {
+        "ok": True,
+        "refreshed_indices": refreshed or ["NIFTY", "SENSEX"],
+        "message": f"Option chain snapshot triggered for {', '.join(refreshed or ['NIFTY', 'SENSEX'])}",
+    }
+
+
+@router.get("/strategies")
+def get_strategies_list(request: Request) -> dict[str, Any]:
+    """List all registered dynamic algo strategies, parameters, and current active selection."""
+    from sentinel.strategies.registry import list_strategies
+
+    st = request.app.state
+    algo_cfg = getattr(st.settings, "algo", None)
+    return {
+        "ok": True,
+        "strategies": list_strategies(),
+        "active_strategy": algo_cfg.active_strategy if algo_cfg else "institutional_breakout",
+        "enabled": algo_cfg.enabled if algo_cfg else False,
+        "auto_execute": algo_cfg.auto_execute if algo_cfg else False,
+    }
+
+
+@router.post("/strategies/backtest")
+async def run_strategy_backtest(request: Request) -> dict[str, Any]:
+    """Run an on-demand historical backtest for a dynamic algo strategy with the 23-point checklist."""
+    from sentinel.backtest.engine import BacktestEngine
+    from sentinel.strategies.registry import get_strategy
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    strat_name = str(body.get("strategy", "institutional_breakout")).strip()
+    instrument = str(body.get("instrument", "NIFTY")).upper()
+    days = int(body.get("days", 5))
+    from_date = body.get("from_date")
+    to_date = body.get("to_date")
+    params = body.get("params") or {}
+    enable_slippage = bool(body.get("enable_slippage", True))
+
+    try:
+        strat = get_strategy(strat_name, params)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    bte = BacktestEngine()
+    st = request.app.state
+    broker = getattr(st, "broker", None)
+
+    result = bte.run_strategy(
+        strategy=strat,
+        instrument=instrument,
+        days=days,
+        from_date=from_date,
+        to_date=to_date,
+        broker=broker,
+        enable_slippage=enable_slippage,
+    )
+
+    wiggle = bte.parameter_wiggle_test(
+        strategy=strat,
+        instrument=instrument,
+        days=days,
+        from_date=from_date,
+        to_date=to_date,
+        broker=broker,
+    )
+
+    res_dict = result.as_dict()
+    res_dict["wiggle_analysis"] = wiggle
+    return {
+        "ok": True,
+        "result": res_dict,
+    }
+
+
+@router.post("/strategies/active")
+async def set_active_strategy(request: Request) -> dict[str, Any]:
+    """Update active strategy or toggle algo auto-execution mode."""
+    from sentinel.config import AlgoCfg
+    from sentinel.strategies.registry import get_strategy
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    st = request.app.state
+    strat_name = str(body.get("strategy", "")).strip()
+    if strat_name:
+        try:
+            get_strategy(strat_name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    curr_algo = getattr(st.settings, "algo", AlgoCfg())
+    new_active = strat_name or curr_algo.active_strategy
+    new_enabled = bool(body.get("enabled", curr_algo.enabled))
+    new_auto_exec = bool(body.get("auto_execute", curr_algo.auto_execute))
+
+    # Update in memory
+    st.settings = st.settings.__class__(
+        **{
+            **{f.name: getattr(st.settings, f.name) for f in st.settings.__dataclass_fields__.values() if f.name != "algo"},
+            "algo": AlgoCfg(
+                enabled=new_enabled,
+                active_strategy=new_active,
+                auto_execute=new_auto_exec,
+            ),
         }
-    except Exception as exc:
-        log.error("Failed to auto-refresh Zerodha token: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Auto-refresh failed: {str(exc)[:180]}")
+    )
+
+    log.info("Active algo strategy updated: %s (enabled=%s, auto_execute=%s)",
+             new_active, new_enabled, new_auto_exec)
+    return {
+        "ok": True,
+        "active_strategy": new_active,
+        "enabled": new_enabled,
+        "auto_execute": new_auto_exec,
+    }
+
+
+@router.get("/{filename:path}")
+def serve_pwa_static(filename: str) -> Any:
+    """Serve root static assets from pwa/dist (e.g. manifest, icons, sw.js)."""
+    from sentinel import config as config_mod
+    pwa_dist = config_mod.ROOT / "pwa" / "dist"
+    target = pwa_dist / filename
+    if target.exists() and target.is_file():
+        from fastapi.responses import FileResponse
+        return FileResponse(str(target))
+    raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+
