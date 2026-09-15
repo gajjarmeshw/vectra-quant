@@ -114,6 +114,8 @@ def create_app() -> FastAPI:
 
     st.broker = build_broker(settings)
     st.instruments = InstrumentService(st.broker, chain_depth=settings.instruments.chain_depth)
+    if hasattr(st.broker, "set_instruments"):
+        st.broker.set_instruments(st.instruments.master)
     st.candles = CandleBuilder()
     st.chain = ChainService(st.broker, st.instruments,
                             depth=settings.instruments.chain_depth,
@@ -471,18 +473,18 @@ def _tick_detectors(st: Any) -> None:
         levels: dict[str, float] = {}
         orange = st.candles.opening_range(sym)
         if orange:
-            levels["ORH"], levels["ORL"] = orange
+            levels["ORH"], levels["ORL"] = orange.high, orange.low
         pd = st.candles.prev_day_range(sym)
         if pd:
-            levels["PDH"], levels["PDL"] = pd
+            levels["PDH"], levels["PDL"] = pd.pdh, pd.pdl
         recent = st.candles.series(sym, "1m", 2)
-        prev_close = recent[0].close if len(recent) >= 2 else None
+        prev_close = recent[0]["close"] if len(recent) >= 2 else None
         for ev in st.events.check_level_break(name, close, levels, prev_close):
             _dispatch(st, ev)
 
         candles5 = st.candles.series(sym, "5m", limit=2)
         if candles5:
-            rng = candles5[-1].high - candles5[-1].low
+            rng = candles5[-1]["high"] - candles5[-1]["low"]
             for ev in st.events.check_momentum_burst(name, rng, st.candles.atr(sym)):
                 _dispatch(st, ev)
 
@@ -546,21 +548,21 @@ def _dispatch(st: Any, ev: Any) -> None:
     levels: dict[str, float] = {}
     orange = st.candles.opening_range(sym)
     if orange:
-        levels["ORH"], levels["ORL"] = orange
+        levels["ORH"], levels["ORL"] = orange.high, orange.low
     pd = st.candles.prev_day_range(sym)
     if pd:
-        levels["PDH"], levels["PDL"] = pd
+        levels["PDH"], levels["PDL"] = pd.pdh, pd.pdl
     if ev.detail.get("level_value"):
         levels[str(ev.detail.get("level", "LEVEL"))] = float(ev.detail["level_value"])
 
     day = st.candles.series(sym, "1m", 400)
     spot_change_pct = (
-        round((spot - day[0].open) / day[0].open * 100.0, 2) if day and day[0].open else 0.0
+        round((spot - day[0]["open"]) / day[0]["open"] * 100.0, 2) if day and day[0].get("open") else 0.0
     )
     vix_series = st.candles.series(st.index_symbols["INDIAVIX"], "1m", 400)
     vix_change_pct = (
-        round((vix - vix_series[0].open) / vix_series[0].open * 100.0, 2)
-        if vix_series and vix_series[0].open else 0.0
+        round((vix - vix_series[0]["open"]) / vix_series[0]["open"] * 100.0, 2)
+        if vix_series and vix_series[0].get("open") else 0.0
     )
 
     payload = pack_snapshot(
@@ -575,7 +577,7 @@ def _dispatch(st: Any, ev: Any) -> None:
             min_confidence=decision.min_confidence,
         ),
         chain=st.chain.compact_for_llm(name),
-        candles_5m=[[c.open, c.high, c.low, c.close]
+        candles_5m=[[c["open"], c["high"], c["low"], c["close"]]
                     for c in st.candles.series(sym, "5m", 12)],
         positions=position_rows or None,
     )
@@ -590,7 +592,8 @@ def _dispatch(st: Any, ev: Any) -> None:
             from sentinel.strategies.base import StrategyContext
             from sentinel.strategies.registry import get_strategy
 
-            strat = get_strategy(st.settings.algo.active_strategy)
+            active_strats = getattr(st.settings.algo, "active_strategies", ["institutional_breakout"])
+            
             fii_lean = "FLAT"
             try:
                 import json
@@ -622,26 +625,32 @@ def _dispatch(st: Any, ev: Any) -> None:
                 active_position=bool(position_rows),
                 fii_lean=fii_lean,
             )
-            sig = strat.evaluate(ctx)
-            if sig:
-                gate, queued = st.lifecycle.apply_gates(
-                    sig.to_suggestion_payload(), spot=spot, is_expiry_day=name in expiring
-                )
-                if gate.passed and queued is not None:
-                    st.lifecycle.enqueue(
-                        queued, event_kind=ev.kind.value, model=f"algo:{strat.name}", event_id=ev.row_id
-                    )
-                    algo_handled = True
-                    if st.settings.algo.auto_execute:
-                        log.warning("AUTO-PILOT ALGO: auto-approving order for %s", strat.name)
-                        st.lifecycle.approve(queued.id, idempotency_key=str(uuid.uuid4()))
-                else:
-                    st.lifecycle.record_gated(
-                        sig.to_suggestion_payload(), gate.reason if gate else "gated",
-                        event_kind=ev.kind.value, model=f"algo:{strat.name}"
-                    )
+
+            for s_name in active_strats:
+                try:
+                    strat = get_strategy(s_name)
+                    sig = strat.evaluate(ctx)
+                    if sig:
+                        gate, queued = st.lifecycle.apply_gates(
+                            sig.to_suggestion_payload(), spot=spot, is_expiry_day=name in expiring
+                        )
+                        if gate.passed and queued is not None:
+                            st.lifecycle.enqueue(
+                                queued, event_kind=ev.kind.value, model=f"algo:{strat.name}", event_id=ev.row_id
+                            )
+                            algo_handled = True
+                            if st.settings.algo.auto_execute:
+                                log.warning("AUTO-PILOT ALGO: auto-approving order for %s", strat.name)
+                                st.lifecycle.approve(queued.id, idempotency_key=str(uuid.uuid4()))
+                        else:
+                            st.lifecycle.record_gated(
+                                sig.to_suggestion_payload(), gate.reason if gate else "gated",
+                                event_kind=ev.kind.value, model=f"algo:{strat.name}"
+                            )
+                except Exception as exc:
+                    log.exception("Dynamic algo strategy evaluation error for %s: %s", s_name, exc)
         except Exception as exc:
-            log.exception("Dynamic algo strategy evaluation error: %s", exc)
+            log.exception("Context preparation error in dynamic algo: %s", exc)
 
     if algo_handled:
         st.events.mark_dispatched(ev)

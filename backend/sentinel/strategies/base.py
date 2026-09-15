@@ -45,6 +45,7 @@ class StrategySignal:
     Matches the strict JSON schema expected by Sentinel's lifecycle gatekeeper.
     """
     direction: str                     # "CE" | "PE"
+    action: str = "BUY"                # "BUY" | "SELL"
     strike_offset: str = "ATM"         # "ATM", "ITM1", "OTM1", etc.
     entry_zone: dict[str, float] = field(default_factory=dict)
     stop_loss_premium: float = 0.0
@@ -66,6 +67,7 @@ class StrategySignal:
 
         return {
             "action": "SUGGEST",
+            "trade_action": self.action,
             "instrument": self.instrument,
             "direction": self.direction,
             "strike_offset": self.strike_offset,
@@ -88,11 +90,26 @@ class BaseStrategy(ABC):
     description: str = "Base Strategy"
     version: str = "1.0"
     default_params: dict[str, Any] = {}
+    
+    # Declarative data requirements for the DataOrchestrator
+    manifest: dict[str, list[str]] = {
+        "symbols": [],
+        "timeframes": [],
+        "indicators": []
+    }
 
     def __init__(self, params: dict[str, Any] | None = None):
         self.params: dict[str, Any] = dict(self.default_params)
         if params:
             self.params.update(params)
+
+    def on_tick(self, symbol: str, tick: dict[str, Any]) -> None:
+        """Triggered on live WebSocket tick."""
+        pass
+
+    def on_candle(self, symbol: str, timeframe: str, candle: Candle) -> None:
+        """Triggered automatically when a new candle closes."""
+        pass
 
     @abstractmethod
     def evaluate(self, ctx: StrategyContext) -> StrategySignal | None:

@@ -165,6 +165,12 @@ class InstrumentMaster:
     def get(self, trading_symbol: str) -> Instrument | None:
         return self._by_symbol.get(trading_symbol)
 
+    def resolve_token(self, trading_symbol: str) -> str:
+        inst = self.get(trading_symbol)
+        if not inst or not inst.exchange_token:
+            raise KeyError(f"No exchange token found for {trading_symbol}")
+        return inst.exchange_token
+
     def lot_size(self, trading_symbol: str) -> int:
         inst = self._by_symbol.get(trading_symbol)
         if inst is None or inst.lot_size <= 0:

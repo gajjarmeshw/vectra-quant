@@ -170,7 +170,7 @@ class InstrumentsCfg:
 @dataclass(frozen=True)
 class AlgoCfg:
     enabled: bool = True
-    active_strategy: str = "institutional_breakout"
+    active_strategies: list[str] = field(default_factory=lambda: ["institutional_breakout"])
     auto_execute: bool = False
 
 
@@ -325,7 +325,7 @@ def _build(raw: dict[str, Any], secrets: Secrets) -> Settings:
         secrets=secrets,
         algo=AlgoCfg(
             enabled=bool((raw.get("algo") or {}).get("enabled", True)),
-            active_strategy=str((raw.get("algo") or {}).get("active_strategy", "institutional_breakout")),
+            active_strategies=list((raw.get("algo") or {}).get("active_strategies", ["institutional_breakout"])),
             auto_execute=bool((raw.get("algo") or {}).get("auto_execute", False)),
         ),
         broker_name=str(os.getenv("BROKER_NAME") or raw.get("broker") or "dhan").lower(),

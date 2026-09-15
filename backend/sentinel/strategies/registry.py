@@ -7,11 +7,13 @@ from sentinel.strategies.base import BaseStrategy
 from sentinel.strategies.institutional_breakout import InstitutionalBreakoutStrategy
 from sentinel.strategies.option_wall_squeeze import OptionWallTrappedSqueezeStrategy
 from sentinel.strategies.wall_mean_reversion import WallMeanReversionStrategy
+from sentinel.strategies.renko_strategy import DynamicRenkoStrategy
 
 _STRATEGIES: dict[str, type[BaseStrategy]] = {
     InstitutionalBreakoutStrategy.name: InstitutionalBreakoutStrategy,
     OptionWallTrappedSqueezeStrategy.name: OptionWallTrappedSqueezeStrategy,
     WallMeanReversionStrategy.name: WallMeanReversionStrategy,
+    DynamicRenkoStrategy.name: DynamicRenkoStrategy,
 }
 
 
@@ -35,6 +37,7 @@ def list_strategies() -> list[dict[str, Any]]:
         "institutional_breakout": "Institutional Breakout (ORB + Walls)",
         "option_wall_squeeze": "Trapped Option Wall Squeeze",
         "wall_mean_reversion": "Defended Range Mean Reversion",
+        "renko_strategy": "Dynamic Renko (ATR & EMA Filter)",
     }
     for name, cls in _STRATEGIES.items():
         result.append({
@@ -45,5 +48,6 @@ def list_strategies() -> list[dict[str, Any]]:
             "version": cls.version,
             "default_params": cls.default_params,
             "wiggle_params": [k for k, v in cls.default_params.items() if isinstance(v, (int, float))],
+            "manifest": getattr(cls, "manifest", {"symbols": [], "timeframes": [], "indicators": []}),
         })
     return result

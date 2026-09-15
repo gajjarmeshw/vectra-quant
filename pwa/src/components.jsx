@@ -289,7 +289,7 @@ export function InstitutionalPostureCard({ instData, instrument = 'NIFTY', spot 
       {/* PCR Metric & Sentiment */}
       <div className="flex justify-between items-center text-[11px] text-muted pt-1 border-t border-line">
         <span>
-          Put-Call Ratio (PCR): <b className="font-mono text-ink text-[12px]">{pcr.toFixed(2)}</b>
+          Put-Call Ratio (PCR): <b className="font-mono text-ink text-[12px]">{pcr != null ? pcr.toFixed(2) : '—'}</b>
         </span>
         <span className={`font-medium ${pcrBadge.color}`}>
           {pcrBadge.label}

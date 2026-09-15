@@ -14,7 +14,30 @@ const hhmm = (iso) =>
 
 /* ---------------------------------------------------------------- Today */
 
-export function Today({ s, onSquareOff }) {
+export function PaperTrading({ s, onSquareOff }) {
+  const fsm = s.fsm || {};
+  const isPaper = s.mode === 'PAPER';
+
+  return (
+    <div className="space-y-cardgap">
+      <Card className="bg-line-soft border-line">
+        <Eyebrow>Paper Trading Mode</Eyebrow>
+        <div className="text-body text-ink-2 mt-2">
+          {isPaper ? (
+            <span className="text-green font-semibold">✅ You are currently in Paper Trading mode.</span>
+          ) : (
+            <span className="text-amber font-semibold">⚠️ You are currently in LIVE mode.</span>
+          )}
+          <br /><br />
+          To switch modes, please change <code className="bg-card px-1 py-0.5 rounded text-xs font-mono">IS_LIVE=false</code> in your <code className="bg-card px-1 py-0.5 rounded text-xs font-mono">.env</code> file and restart the Sentinel backend terminal.
+        </div>
+      </Card>
+      {isPaper && <Today s={s} onSquareOff={onSquareOff} />}
+    </div>
+  );
+}
+
+export function Today({ s, onSquareOff, onReadReport }) {
   const fsm = s.fsm || {};
   const m = s.market || {};
   return (
@@ -43,16 +66,6 @@ export function Today({ s, onSquareOff }) {
 
       <PremarketCard />
 
-      {s.institutional &&
-        Object.entries(s.institutional).map(([sym, data]) => (
-          <InstitutionalPostureCard
-            key={sym}
-            instData={data}
-            instrument={sym}
-            spot={m[sym]?.ltp}
-          />
-        ))}
-
       <Card>
         <Row
           left={<Eyebrow>Day P&amp;L</Eyebrow>}
@@ -60,41 +73,6 @@ export function Today({ s, onSquareOff }) {
         />
         <div className={`num text-hero mt-1 ${pnlColor(fsm.day_pnl)}`}>
           {rupee(fsm.day_pnl, true)}
-        </div>
-        <div className="text-sec text-ink-2 mt-1.5">
-          {Math.round(((fsm.day_pnl || 0) / (s.target || 1)) * 100)}% of target · floor at{' '}
-          <b className="num">{rupee(fsm.floor, true)}</b>
-        </div>
-        <DayRail
-          dayPnl={fsm.day_pnl || 0}
-          floor={fsm.floor || 0}
-          target={s.target || 2500}
-          lossLimit={s.loss_limit || 1050}
-        />
-        <div className="grid grid-cols-3 mt-4 border-t border-line">
-          <div className="pt-3.5 pr-2">
-            <Eyebrow>Trades</Eyebrow>
-            <div className="mt-2">
-              <TradeDots taken={fsm.trades_taken || 0} cap={fsm.trade_cap || 3} />
-            </div>
-          </div>
-          <div className="pt-3.5 px-3 border-l border-line">
-            <Eyebrow>Risk / trade</Eyebrow>
-            <div className="num text-contract font-semibold mt-1">
-              {rupee(s.risk_per_trade)}
-            </div>
-          </div>
-          <div className="pt-3.5 pl-3 border-l border-line">
-            <Eyebrow>Entry window</Eyebrow>
-            <div className="num text-contract font-semibold mt-1">
-              {s.in_entry_window ? `→ ${s.entry_close || '15:00'}` : 'closed'}
-            </div>
-          </div>
-        </div>
-        <div className="num text-eyebrow text-muted mt-3 pt-3 border-t border-line-soft">
-          realized {rupee(fsm.realized, true)} · to floor {rupee(s.floor_distance)} · charges{' '}
-          {rupee(s.charges_today)}
-          {s.open_charges_est > 0 && ` (+${rupee(s.open_charges_est)} to exit)`}
         </div>
       </Card>
 
@@ -593,7 +571,7 @@ export function Journal() {
 export function Strategies({ s, onRefresh }) {
   const algo = s?.algo || {};
   const [strategies, setStrategies] = useState([]);
-  const [activeStrat, setActiveStrat] = useState(algo.active_strategy || 'institutional_breakout');
+  const [activeStrats, setActiveStrats] = useState(algo.active_strategies || ['institutional_breakout']);
   const [autoExec, setAutoExec] = useState(Boolean(algo.auto_execute));
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
@@ -602,22 +580,22 @@ export function Strategies({ s, onRefresh }) {
     api.getStrategies().then((data) => {
       if (data?.strategies) {
         setStrategies(data.strategies);
-        if (data.active_strategy) setActiveStrat(data.active_strategy);
+        if (data.active_strategies) setActiveStrats(data.active_strategies);
         if (data.auto_execute != null) setAutoExec(Boolean(data.auto_execute));
       }
     }).catch(() => {});
-  }, [algo.active_strategy, algo.auto_execute]);
+  }, [algo.active_strategies, algo.auto_execute]);
 
-  const onSave = async (newStrat, newAuto) => {
+  const onSave = async (newStrats, newAuto) => {
     setSaving(true);
     try {
       await api.setActiveStrategy({
-        strategy: newStrat,
+        strategies: newStrats,
         auto_execute: newAuto,
       });
-      setActiveStrat(newStrat);
+      setActiveStrats(newStrats);
       setAutoExec(newAuto);
-      setToast(`Active algorithm updated to ${newStrat}!`);
+      setToast(`Active algorithms updated!`);
       setTimeout(() => setToast(''), 3000);
       if (onRefresh) onRefresh();
     } catch (e) {
@@ -625,6 +603,13 @@ export function Strategies({ s, onRefresh }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const toggleStrategy = (stratName) => {
+    const newStrats = activeStrats.includes(stratName)
+      ? activeStrats.filter(n => n !== stratName)
+      : [...activeStrats, stratName];
+    onSave(newStrats, autoExec);
   };
 
   return (
@@ -645,7 +630,9 @@ export function Strategies({ s, onRefresh }) {
         </div>
 
         <div className="font-disp text-lock font-bold text-ink mt-2">
-          {strategies.find((x) => x.name === activeStrat)?.display_name || activeStrat.replace(/_/g, ' ').toUpperCase()}
+          {activeStrats.length > 0 
+            ? activeStrats.map(strat => strategies.find((x) => x.name === strat)?.display_name || strat.replace(/_/g, ' ').toUpperCase()).join(', ')
+            : 'NONE ACTIVE'}
         </div>
         <p className="text-sec text-ink-2 mt-1">
           {autoExec
@@ -664,7 +651,7 @@ export function Strategies({ s, onRefresh }) {
                   ? 'bg-ink text-paper border-ink shadow-sm'
                   : 'bg-white text-ink-2 border-line hover:border-ink'
               }`}
-              onClick={() => onSave(activeStrat, false)}
+              onClick={() => onSave(activeStrats, false)}
             >
               ✋ Assisted Mode
             </button>
@@ -676,7 +663,7 @@ export function Strategies({ s, onRefresh }) {
                   ? 'bg-ai text-white border-ai shadow-sm'
                   : 'bg-white text-ink-2 border-line hover:border-ai'
               }`}
-              onClick={() => onSave(activeStrat, true)}
+              onClick={() => onSave(activeStrats, true)}
             >
               ⚡ Auto-Pilot
             </button>
@@ -688,14 +675,14 @@ export function Strategies({ s, onRefresh }) {
       <Card>
         <Eyebrow>Dynamic Strategy Catalog</Eyebrow>
         <p className="text-body text-ink-2 mt-1">
-          Select an institutional strategy below to activate it live across market hours.
+          Select institutional strategies below to activate them live across market hours.
         </p>
       </Card>
 
       {/* Strategy Cards */}
       <div className="space-y-3">
         {strategies.map((st) => {
-          const isActive = st.name === activeStrat;
+          const isActive = activeStrats.includes(st.name);
           return (
             <Card
               key={st.name}
@@ -714,14 +701,18 @@ export function Strategies({ s, onRefresh }) {
                   </div>
                 </div>
                 {isActive ? (
-                  <span className="chip bg-green-soft text-green border-green text-[11px] font-semibold">
+                  <button
+                    className="chip bg-green-soft text-green border-green text-[11px] font-semibold cursor-pointer"
+                    disabled={saving}
+                    onClick={() => toggleStrategy(st.name)}
+                  >
                     ✓ Active
-                  </span>
+                  </button>
                 ) : (
                   <button
                     className="btn-ghost !w-auto text-xs py-1 px-3 border border-line"
                     disabled={saving}
-                    onClick={() => onSave(st.name, autoExec)}
+                    onClick={() => toggleStrategy(st.name)}
                   >
                     Activate
                   </button>
@@ -1034,6 +1025,7 @@ function TradeReplayLog({ trades = [] }) {
               key={idx}
               className="p-3 rounded-block bg-line-soft/40 border border-line text-xs num space-y-1.5"
             >
+              {/* Row 1: Trade # · Direction · PnL */}
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-ink">
@@ -1041,15 +1033,24 @@ function TradeReplayLog({ trades = [] }) {
                   </span>
                   <span
                     className={`chip text-[10px] font-bold px-1.5 py-0.5 ${
-                      t.direction === 'CE'
-                        ? 'bg-green-soft text-green border-green'
-                        : 'bg-red-soft text-red border-red'
+                      t.direction === 'SHORT'
+                        ? 'bg-orange-soft text-orange border-orange'
+                        : 'bg-blue-soft text-blue border-blue'
                     }`}
                   >
                     {t.direction}
                   </span>
-                  <span className="font-semibold text-ink text-[12px]">
-                    {t.symbol || `${t.instrument || 'NIFTY'}_${t.direction}`}
+                  {/* Exit reason badge */}
+                  <span
+                    className={`chip text-[9px] font-semibold py-0.5 ${
+                      exitReason.includes('Target')
+                        ? 'bg-green-soft text-green border-green'
+                        : exitReason.includes('Stop')
+                        ? 'bg-red-soft text-red border-red'
+                        : 'bg-line-soft text-ink-2 border-line'
+                    }`}
+                  >
+                    {exitReason}
                   </span>
                 </div>
                 <span className={`font-bold text-sm ${pnlColor(t.net_pnl)}`}>
@@ -1057,6 +1058,29 @@ function TradeReplayLog({ trades = [] }) {
                 </span>
               </div>
 
+              {/* Row 2: Option Spread Details */}
+              {t.instrument_details && (
+                <div className="flex items-center gap-1.5 text-[11px]">
+                  <span className="text-muted">Spread:</span>
+                  {t.instrument_details.split(' / ').map((leg, i) => {
+                    const isSell = leg.startsWith('SELL');
+                    return (
+                      <span
+                        key={i}
+                        className={`chip text-[10px] font-semibold px-1.5 py-0.5 ${
+                          isSell
+                            ? 'bg-red-soft text-red border-red'
+                            : 'bg-green-soft text-green border-green'
+                        }`}
+                      >
+                        {leg.trim()}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Row 3: Entry → Exit prices and pts */}
               <div className="flex justify-between items-center text-[11px] text-muted">
                 <div className="flex items-center gap-1.5">
                   <span>
@@ -1066,26 +1090,21 @@ function TradeReplayLog({ trades = [] }) {
                     ({ptsDiff >= 0 ? '+' : ''}{ptsDiff.toFixed(2)} pts)
                   </span>
                 </div>
-                <span
-                  className={`chip text-[9px] font-semibold py-0.5 ${
-                    exitReason.includes('TARGET')
-                      ? 'bg-green-soft text-green border-green'
-                      : exitReason.includes('STOP')
-                      ? 'bg-red-soft text-red border-red'
-                      : 'bg-line-soft text-ink-2 border-line'
-                  }`}
-                >
-                  {exitReason}
-                </span>
               </div>
 
+              {/* Row 4: Time · Slippage/Fees/Qty · Capital */}
               <div className="flex justify-between text-[10px] text-muted pt-1 border-t border-line/60">
                 <span>
                   {t.opened_at && t.closed_at ? `${t.opened_at} → ${t.closed_at} IST` : 'Intraday Bar Execution'}
                 </span>
-                <span>
-                  Slippage: {rupee(t.slippage_cost || 0)} · Fees: {rupee(t.costs || 0)} · Qty: {t.qty || 65}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span>Slippage: {rupee(t.slippage_cost || 0)} · Fees: {rupee(t.costs || 0)} · Qty: {t.qty || 50}</span>
+                  {t.capital_used > 0 && (
+                    <span className="chip text-[9px] font-semibold bg-blue-soft text-blue border-blue px-1.5 py-0.5">
+                      Capital: {rupee(t.capital_used)}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -1171,6 +1190,8 @@ export function Backtest() {
                 value={strat}
                 onChange={(e) => setStrat(e.target.value)}
               >
+                <option value="nifty_5d_breakout">Nifty 5-Day (Event)</option>
+                <option value="renko_strategy">Dynamic Renko (Event)</option>
                 <option value="institutional_breakout">Breakout</option>
                 <option value="option_wall_squeeze">Wall Squeeze</option>
                 <option value="wall_mean_reversion">Mean Rev</option>
@@ -1336,14 +1357,28 @@ export function Backtest() {
           </div>
 
           {res.data_warning && (
-            <div className="p-3 rounded-block bg-amber-soft/60 border border-amber/40 text-xs text-amber space-y-1">
-              <div className="font-bold flex items-center gap-1.5">
-                <span>⚠️</span> Edge Unverified on Real Market Data
+            res.data_source?.includes('NO_DATA') ? (
+              <div className="p-4 rounded-block bg-red-soft/70 border border-red/60 text-xs space-y-2">
+                <div className="font-bold text-red flex items-center gap-2 text-sm">
+                  <span>🔌</span> Broker Not Connected — Real Data Required
+                </div>
+                <p className="text-[12px] leading-relaxed text-ink">
+                  {res.data_warning}
+                </p>
+                <div className="text-[11px] text-muted">
+                  Go to <strong>System</strong> → configure <code>DHAN_CLIENT_ID</code> and <code>DHAN_ACCESS_TOKEN</code> in your <code>.env</code>, then restart the server.
+                </div>
               </div>
-              <p className="text-[11px] leading-relaxed text-ink-2">
-                {res.data_warning}
-              </p>
-            </div>
+            ) : (
+              <div className="p-3 rounded-block bg-amber-soft/60 border border-amber/40 text-xs text-amber space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <span>⚠️</span> Edge Unverified on Real Market Data
+                </div>
+                <p className="text-[11px] leading-relaxed text-ink-2">
+                  {res.data_warning}
+                </p>
+              </div>
+            )
           )}
 
           {/* Check 17 Wiggle Test Result */}
@@ -1415,10 +1450,15 @@ export function DataScreen({ s, onRefresh }) {
   const [manualToken, setManualToken] = useState('');
   const [updatingToken, setUpdatingToken] = useState(false);
   const [dataStatus, setDataStatus] = useState(null);
+  const [strategies, setStrategies] = useState([]);
+  const activeStrats = s?.algo?.active_strategies || [];
   const h = s?.health || {};
 
   useEffect(() => {
     api.getDataStatus().then(setDataStatus).catch(() => {});
+    api.getStrategies().then((data) => {
+      if (data?.strategies) setStrategies(data.strategies);
+    }).catch(() => {});
   }, [s]);
 
   const onFetchCandles = async () => {
@@ -1605,6 +1645,44 @@ export function DataScreen({ s, onRefresh }) {
           />
         </div>
       </Card>
+
+      {/* Strategy Dependencies */}
+      <Card>
+        <Eyebrow>Active Strategy Dependencies</Eyebrow>
+        <div className="mt-3 space-y-4">
+          {strategies.filter(st => activeStrats.includes(st.name)).map(st => (
+            <div key={st.name} className="border-b border-line last:border-0 pb-3 last:pb-0">
+              <div className="font-semibold text-xs text-ink mb-1.5">{st.display_name || st.name.replace(/_/g, ' ').toUpperCase()}</div>
+              {st.dependency_health ? (
+                <div className="flex flex-wrap gap-1.5 text-[11px] num">
+                  {Object.entries(st.dependency_health.symbols || {}).map(([sym, status]) => (
+                    <span key={sym} className={`px-2 py-0.5 rounded-pill border ${
+                      status === 'OK' ? 'bg-green-soft text-green border-green-soft' :
+                      status === 'STALE' ? 'bg-amber-soft text-amber border-amber-soft' :
+                      'bg-red-soft text-red border-red-soft'
+                    }`}>
+                      TICK: {sym} ({status})
+                    </span>
+                  ))}
+                  {Object.entries(st.dependency_health.timeframes || {}).map(([tf, status]) => (
+                    <span key={tf} className={`px-2 py-0.5 rounded-pill border ${
+                      status === 'OK' ? 'bg-green-soft text-green border-green-soft' :
+                      'bg-amber-soft text-amber border-amber-soft'
+                    }`}>
+                      CANDLE: {tf} ({status})
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-ink-2">No dependencies tracked.</div>
+              )}
+            </div>
+          ))}
+          {strategies.filter(st => activeStrats.includes(st.name)).length === 0 && (
+            <div className="text-sm text-ink-2">No active strategies.</div>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }
@@ -1669,49 +1747,6 @@ export function System({ s, onKill, onEnablePush, pushState, onOpenConfig, onOpe
         </div>
       </Card>
 
-      {/* Risk Profile Presets */}
-      <Card>
-        <Eyebrow>Risk Profile Presets</Eyebrow>
-        <p className="text-body text-ink-2 mt-2">
-          1-tap risk budget preset selection for market conditions (Target / Loss Limit / Risk per trade).
-        </p>
-        <div className="grid grid-cols-3 gap-2 mt-3">
-          {['CONSERVATIVE', 'MODERATE', 'AGGRESSIVE'].map((p) => (
-            <button
-              key={p}
-              className={`btn text-xs py-2 ${
-                (s.risk?.target === (p === 'CONSERVATIVE' ? 1500 : p === 'AGGRESSIVE' ? 5000 : 2500))
-                  ? 'bg-green text-paper border-green font-bold'
-                  : 'btn-ghost'
-              }`}
-              onClick={async () => {
-                try {
-                  await api.setPreset(p);
-                  alert(`Applied ${p} risk profile preset!`);
-                  if (onRefresh) onRefresh();
-                } catch (e) {
-                  alert(e.message);
-                }
-              }}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-      </Card>
-
-      {/* Parameters */}
-      <Card>
-        <Eyebrow>System Parameters</Eyebrow>
-        <p className="text-body text-ink-2 mt-2">
-          Every tunable — target, loss limit, risk, windows, sizing, guardian, events.
-          Editable outside 09:15–15:30 IST.
-        </p>
-        <button className="btn bg-ink text-paper mt-3" onClick={onOpenConfig}>
-          Open config
-        </button>
-      </Card>
-
       {/* Notifications */}
       <Card>
         <Eyebrow>Notifications</Eyebrow>
@@ -1732,236 +1767,6 @@ export function System({ s, onKill, onEnablePush, pushState, onOpenConfig, onOpe
         <button className="btn-ghost mt-3" onClick={onOpenJournal}>
           Read Day-End Report &amp; Journal
         </button>
-      </Card>
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------- Config
-
-   Every value in params.yaml, editable from the phone. The server refuses writes
-   between 09:15 and 15:30 IST (deliberate friction — you cannot loosen a risk rule
-   mid-tilt), so during market hours this is a read-only view.                    */
-
-function leaves(obj, base = []) {
-  const out = [];
-  for (const [k, v] of Object.entries(obj || {})) {
-    const path = [...base, k];
-    if (v !== null && typeof v === 'object' && !Array.isArray(v)) out.push(...leaves(v, path));
-    else out.push({ path, value: v });
-  }
-  return out;
-}
-
-const at = (obj, path) => path.reduce((o, k) => (o == null ? o : o[k]), obj);
-
-function setAt(obj, path, value) {
-  let node = obj;
-  for (const k of path.slice(0, -1)) node = node[k];
-  node[path.at(-1)] = value;
-}
-
-/* The default value is the schema: a number stays a number, a flag stays a bool.
-   Without this a typed "12" would be written back to YAML as the string "12". */
-function coerce(text, sample) {
-  if (typeof sample === 'number') {
-    const n = Number(text);
-    if (text.trim() === '' || !Number.isFinite(n)) return { ok: false };
-    return { ok: true, value: Number.isInteger(sample) && Number.isInteger(n) ? n : n };
-  }
-  if (Array.isArray(sample)) {
-    try {
-      return { ok: true, value: JSON.parse(text) };
-    } catch {
-      return { ok: false };
-    }
-  }
-  return { ok: true, value: text };
-}
-
-export function Config({ onBack, flash }) {
-  const [data, setData] = useState(null);
-  const [draft, setDraft] = useState(null);
-  const [buf, setBuf] = useState({});
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState('');
-
-  const load = () =>
-    api
-      .getConfig()
-      .then((d) => {
-        setData(d);
-        setDraft(structuredClone(d.params));
-        setBuf({});
-        setErr('');
-      })
-      .catch((e) => setErr(e.message));
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  if (err) {
-    return (
-      <>
-        <button className="btn-ghost" onClick={onBack}>← Back</button>
-        <Card><Empty>{err}</Empty></Card>
-      </>
-    );
-  }
-  if (!draft) {
-    return (
-      <>
-        <button className="btn-ghost" onClick={onBack}>← Back</button>
-        <Card><Empty>Loading config…</Empty></Card>
-      </>
-    );
-  }
-
-  const editable = data.editable_now;
-  const dirty = JSON.stringify(draft) !== JSON.stringify(data.params);
-  const invalid = Object.entries(buf).filter(([, v]) => v.bad).map(([k]) => k);
-
-  const edit = (path, text) => {
-    const key = path.join('.');
-    const sample = at(data.defaults, path) ?? at(data.params, path);
-    const c = coerce(text, sample);
-    setBuf({ ...buf, [key]: { text, bad: !c.ok } });
-    if (!c.ok) return;
-    const next = structuredClone(draft);
-    setAt(next, path, c.value);
-    setDraft(next);
-  };
-
-  const toggle = (path) => {
-    const next = structuredClone(draft);
-    setAt(next, path, !at(draft, path));
-    setDraft(next);
-  };
-
-  const save = async () => {
-    setBusy('save');
-    try {
-      const r = await api.putConfig(draft);
-      setData({ ...data, params: r.params });
-      setDraft(structuredClone(r.params));
-      setBuf({});
-      flash(`Saved. ${r.note}`);
-    } catch (e) {
-      flash(e.message);
-    } finally {
-      setBusy('');
-    }
-  };
-
-  const reset = async () => {
-    if (!window.confirm('Restore EVERY parameter to factory defaults?')) return;
-    setBusy('reset');
-    try {
-      const r = await api.resetConfig();
-      setData({ ...data, params: r.params });
-      setDraft(structuredClone(r.params));
-      setBuf({});
-      flash(`Reset to defaults. ${r.note}`);
-    } catch (e) {
-      flash(e.message);
-    } finally {
-      setBusy('');
-    }
-  };
-
-  const groups = Object.keys(draft);
-
-  return (
-    <div className="space-y-cardgap">
-      <div className="flex items-center justify-between">
-        <button className="btn-ghost" onClick={onBack}>← Back</button>
-        {dirty && <span className="chip bg-amber-soft text-amber border-amber">unsaved</span>}
-      </div>
-
-      {!editable && (
-        <Banner tone="amber">
-          READ-ONLY 09:15–15:30 IST. Risk rules cannot be changed mid-session by design.
-        </Banner>
-      )}
-
-      {groups.map((g) => {
-        const rows = typeof draft[g] === 'object' && draft[g] !== null && !Array.isArray(draft[g])
-          ? leaves(draft[g], [g])
-          : [{ path: [g], value: draft[g] }];
-        return (
-          <Card key={g}>
-            <Eyebrow>{g.replace(/_/g, ' ')}</Eyebrow>
-            <div className="mt-2 divide-y divide-line">
-              {rows.map(({ path, value }) => {
-                const key = path.join('.');
-                const label = path.slice(g === path[0] ? 1 : 0).join(' · ') || g;
-                const def = at(data.defaults, path);
-                const changed = JSON.stringify(value) !== JSON.stringify(def);
-                const shown = buf[key]?.text ?? (Array.isArray(value) ? JSON.stringify(value) : String(value));
-                return (
-                  <div key={key} className="py-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-body truncate">{label}</div>
-                      {changed && def !== undefined && (
-                        <div className="num text-eyebrow text-muted mt-1">
-                          default {String(def)}
-                        </div>
-                      )}
-                    </div>
-                    {typeof value === 'boolean' ? (
-                      <button
-                        className={`chip ${value ? 'bg-green text-paper border-green' : 'bg-ink text-paper border-ink'}`}
-                        disabled={!editable}
-                        onClick={() => toggle(path)}
-                      >
-                        {value ? 'on' : 'off'}
-                      </button>
-                    ) : (
-                      <input
-                        className={`num rounded-block px-3 py-2 text-right w-32 border ${
-                          buf[key]?.bad ? 'border-red text-red' : 'border-line'
-                        }`}
-                        inputMode={typeof value === 'number' ? 'decimal' : 'text'}
-                        disabled={!editable}
-                        value={shown}
-                        onChange={(e) => edit(path, e.target.value)}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-        );
-      })}
-
-      <Card>
-        <Eyebrow>Apply</Eyebrow>
-        <p className="text-body text-ink-2 mt-2">
-          Windows, sizing, guardian and event settings take effect immediately. Risk-engine
-          values (target, loss limit, risk per trade, FSM floors) load at boot — restart to
-          apply those.
-        </p>
-        <div className="mt-4 space-y-2">
-          <button
-            className="btn bg-ink text-paper w-full"
-            disabled={!editable || !dirty || invalid.length > 0 || busy === 'save'}
-            onClick={save}
-          >
-            {busy === 'save' ? 'Saving…' : 'Save all'}
-          </button>
-          {invalid.length > 0 && (
-            <div className="num text-sec text-red">invalid: {invalid.join(', ')}</div>
-          )}
-          <button
-            className="btn-ghost w-full"
-            disabled={!editable || busy === 'reset'}
-            onClick={reset}
-          >
-            {busy === 'reset' ? 'Resetting…' : 'Reset all to defaults'}
-          </button>
-        </div>
       </Card>
     </div>
   );

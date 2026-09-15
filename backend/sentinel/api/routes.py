@@ -222,7 +222,7 @@ def build_state(st: Any) -> dict[str, Any]:
         },
         "algo": {
             "enabled": getattr(st.settings.algo, "enabled", True) if hasattr(st.settings, "algo") else True,
-            "active_strategy": getattr(st.settings.algo, "active_strategy", "institutional_breakout") if hasattr(st.settings, "algo") else "institutional_breakout",
+            "active_strategies": getattr(st.settings.algo, "active_strategies", ["institutional_breakout"]) if hasattr(st.settings, "algo") else ["institutional_breakout"],
             "auto_execute": getattr(st.settings.algo, "auto_execute", False) if hasattr(st.settings, "algo") else False,
         },
         "server_time": now_ist().isoformat(),
@@ -437,6 +437,7 @@ def run_backtest(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     instrument = str(body.get("instrument", "NIFTY")).upper()
     days = int(body.get("days", 5))
     preset = str(body.get("preset", "MODERATE")).upper()
+    strategy_name = str(body.get("strategy", "institutional_breakout"))
 
     from sentinel.backtest.engine import BacktestEngine
     from sentinel.config import RISK_PRESETS
@@ -449,8 +450,15 @@ def run_backtest(request: Request, body: dict[str, Any]) -> dict[str, Any]:
         loss_limit=preset_vals["loss_limit"],
         risk_per_trade=preset_vals["risk_per_trade"],
     )
-    engine = BacktestEngine(risk_cfg)
-    res = engine.run(instrument=instrument, days=days)
+    
+    if strategy_name == "nifty_5d_breakout":
+        from sentinel.backtest.event_engine import EventBacktestEngine
+        engine = EventBacktestEngine(risk_cfg)
+        res = engine.run(strategy_name=strategy_name, instrument=instrument, days=days)
+    else:
+        engine = BacktestEngine(risk_cfg)
+        res = engine.run(strategy_name=strategy_name, instrument=instrument, days=days)
+        
     return res.as_dict()
 
 
@@ -682,12 +690,48 @@ def get_strategies_list(request: Request) -> dict[str, Any]:
     """List all registered dynamic algo strategies, parameters, and current active selection."""
     from sentinel.strategies.registry import list_strategies
 
+    import time
     st = request.app.state
     algo_cfg = getattr(st.settings, "algo", None)
+    
+    strategies = list_strategies()
+    
+    now = time.time()
+    for strat in strategies:
+        manifest = strat.get("manifest", {})
+        health = {"symbols": {}, "timeframes": {}}
+        
+        # Check symbols (ticks)
+        for sym in manifest.get("symbols", []):
+            # check feed for last tick time
+            last_tick = st.feed._last_tick_time.get(sym, 0)
+            age = now - last_tick
+            if age < 300:  # 5 minutes
+                health["symbols"][sym] = "OK"
+            elif last_tick > 0:
+                health["symbols"][sym] = "STALE"
+            else:
+                health["symbols"][sym] = "WAITING"
+                
+        # Check timeframes (candles)
+        for tf in manifest.get("timeframes", []):
+            if tf == "1m":
+                # checking if we have built any 1m candles across symbols
+                # A bit simplistic, but we can check if NIFTY or main symbol has bars
+                if st.candles._bars_1m:
+                    health["timeframes"][tf] = "OK"
+                else:
+                    health["timeframes"][tf] = "WAITING"
+            else:
+                # Other timeframes (5m etc) logic could be added here
+                health["timeframes"][tf] = "OK"
+
+        strat["dependency_health"] = health
+
     return {
         "ok": True,
-        "strategies": list_strategies(),
-        "active_strategy": algo_cfg.active_strategy if algo_cfg else "institutional_breakout",
+        "strategies": strategies,
+        "active_strategies": algo_cfg.active_strategies if algo_cfg else ["institutional_breakout"],
         "enabled": algo_cfg.enabled if algo_cfg else False,
         "auto_execute": algo_cfg.auto_execute if algo_cfg else False,
     }
@@ -712,15 +756,30 @@ async def run_strategy_backtest(request: Request) -> dict[str, Any]:
     params = body.get("params") or {}
     enable_slippage = bool(body.get("enable_slippage", True))
 
+    st = request.app.state
+    broker = getattr(st, "broker", None)
+
+    if strat_name in ("nifty_5d_breakout", "renko_strategy"):
+        from sentinel.backtest.event_engine import EventBacktestEngine
+        from sentinel.backtest.engine import _BACKTEST_CACHE
+        _BACKTEST_CACHE.clear()   # fresh data for every explicit run
+        bte = EventBacktestEngine()
+        result = bte.run(
+            strategy_name=strat_name,
+            instrument=instrument,
+            days=days,
+            broker=broker,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        return result.as_dict()
+
     try:
         strat = get_strategy(strat_name, params)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     bte = BacktestEngine()
-    st = request.app.state
-    broker = getattr(st, "broker", None)
-
     result = bte.run_strategy(
         strategy=strat,
         instrument=instrument,
@@ -748,47 +807,42 @@ async def run_strategy_backtest(request: Request) -> dict[str, Any]:
     }
 
 
-@router.post("/strategies/active")
+@router.post("/strategies/active", dependencies=[Depends(require_secret)])
 async def set_active_strategy(request: Request) -> dict[str, Any]:
-    """Update active strategy or toggle algo auto-execution mode."""
+    """Update active strategies or toggle algo auto-execution mode."""
     from sentinel.config import AlgoCfg
-    from sentinel.strategies.registry import get_strategy
 
     try:
         body = await request.json()
     except Exception:
-        body = {}
+        raise HTTPException(status_code=400, detail="invalid JSON")
 
     st = request.app.state
-    strat_name = str(body.get("strategy", "")).strip()
-    if strat_name:
-        try:
-            get_strategy(strat_name)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    strats = body.get("strategies")
 
     curr_algo = getattr(st.settings, "algo", AlgoCfg())
-    new_active = strat_name or curr_algo.active_strategy
+    new_active = strats if strats is not None else curr_algo.active_strategies
     new_enabled = bool(body.get("enabled", curr_algo.enabled))
     new_auto_exec = bool(body.get("auto_execute", curr_algo.auto_execute))
 
-    # Update in memory
-    st.settings = st.settings.__class__(
-        **{
+    try:
+        # Re-build settings with new algo configuration
+        st.settings = type(st.settings)(
             **{f.name: getattr(st.settings, f.name) for f in st.settings.__dataclass_fields__.values() if f.name != "algo"},
-            "algo": AlgoCfg(
+            algo=AlgoCfg(
                 enabled=new_enabled,
-                active_strategy=new_active,
+                active_strategies=new_active,
                 auto_execute=new_auto_exec,
-            ),
-        }
-    )
+            )
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"config error: {exc}")
 
-    log.info("Active algo strategy updated: %s (enabled=%s, auto_execute=%s)",
+    log.info("Active algo strategies updated: %s (enabled=%s, auto_execute=%s)",
              new_active, new_enabled, new_auto_exec)
     return {
         "ok": True,
-        "active_strategy": new_active,
+        "active_strategies": new_active,
         "enabled": new_enabled,
         "auto_execute": new_auto_exec,
     }

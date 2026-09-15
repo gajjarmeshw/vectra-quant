@@ -53,6 +53,9 @@ DHAN_INDEX_SECURITY_MAP: dict[str, dict[str, str]] = {
     "FINNIFTY": {"security_id": "27", "exchange_segment": "IDX_I", "instrument_type": "INDEX"},
     "NIFTY FIN SERVICE": {"security_id": "27", "exchange_segment": "IDX_I", "instrument_type": "INDEX"},
     "SENSEX": {"security_id": "51", "exchange_segment": "IDX_I", "instrument_type": "INDEX"},
+    "BSE SENSEX": {"security_id": "51", "exchange_segment": "IDX_I", "instrument_type": "INDEX"},
+    "INDIA VIX": {"security_id": "21", "exchange_segment": "IDX_I", "instrument_type": "INDEX"},
+    "INDIAVIX": {"security_id": "21", "exchange_segment": "IDX_I", "instrument_type": "INDEX"},
 }
 
 
@@ -82,11 +85,18 @@ class DhanAdapter:
 
         # Short TTL cache to prevent API hammering
         self._cached_orders: list[Order] = []
-        self._last_orders_fetch: float = 0.0
+        self._last_orders_fetch = 0.0
+
         self._cached_positions: list[Position] = []
-        self._last_positions_fetch: float = 0.0
-        self._cached_funds: Funds = Funds(available=0.0, total=0.0)
-        self._last_funds_fetch: float = 0.0
+        self._last_positions_fetch = 0.0
+
+        self._cached_funds = Funds(0.0, 0.0, 0.0, 0.0)
+        self._last_funds_fetch = 0.0
+
+        self._instruments_master: InstrumentMaster | None = None
+
+    def set_instruments(self, master: InstrumentMaster) -> None:
+        self._instruments_master = master
 
     def _handle_api_error(self, action: str, e: Exception) -> None:
         err_msg = str(e)
@@ -360,15 +370,38 @@ class DhanAdapter:
                 t_str = chunk_end.strftime("%Y-%m-%d")
 
                 try:
-                    resp = self.dhan.intraday_minute_data(
-                        security_id=sec_id,
-                        exchange_segment=exch_seg,
-                        instrument_type=inst_type,
-                        from_date=f_str,
-                        to_date=t_str,
-                        interval=interval,
-                    )
-                    chunk_candles = self._parse_dhan_candles(resp)
+                    if interval == 1 and hasattr(self.dhan, "historical_minute_data"):
+                        resp = self.dhan.historical_minute_data(
+                            security_id=sec_id,
+                            exchange_segment=exch_seg,
+                            instrument_type=inst_type,
+                            from_date=f_str,
+                            to_date=t_str,
+                        )
+                        chunk_candles = self._parse_dhan_candles(resp)
+                        
+                        # Fallback to intraday for recent days if historical returns nothing
+                        if not chunk_candles:
+                            resp = self.dhan.intraday_minute_data(
+                                security_id=sec_id,
+                                exchange_segment=exch_seg,
+                                instrument_type=inst_type,
+                                from_date=f_str,
+                                to_date=t_str,
+                                interval=interval,
+                            )
+                            chunk_candles = self._parse_dhan_candles(resp)
+                    else:
+                        resp = self.dhan.intraday_minute_data(
+                            security_id=sec_id,
+                            exchange_segment=exch_seg,
+                            instrument_type=inst_type,
+                            from_date=f_str,
+                            to_date=t_str,
+                            interval=interval,
+                        )
+                        chunk_candles = self._parse_dhan_candles(resp)
+                    
                     for c in chunk_candles:
                         all_candles[c.ts.isoformat()] = c
                 except Exception as chunk_err:
@@ -430,53 +463,99 @@ class DhanAdapter:
     def get_ltp_batch(self, symbols: list[str]) -> dict[str, float]:
         if not symbols:
             return {}
+        out: dict[str, float] = {}
         try:
-            idx_ids = [int(DHAN_INDEX_SECURITY_MAP[s]["security_id"]) for s in symbols if s.upper() in DHAN_INDEX_SECURITY_MAP]
-            if not idx_ids:
-                return {}
-
-            resp = self.dhan.ticker_data({"IDX_I": idx_ids})
-            out: dict[str, float] = {}
-            data_map = resp.get("data", {}) if isinstance(resp, dict) else {}
-
-            for sym in symbols:
-                meta = DHAN_INDEX_SECURITY_MAP.get(sym.upper())
-                if meta:
-                    sid = meta["security_id"]
-                    val = data_map.get(sid, {})
-                    out[sym] = float(val.get("last_price", 0.0))
-            return out
+            idx_ids = [int(DHAN_INDEX_SECURITY_MAP[s.upper()]["security_id"]) for s in symbols if s.upper() in DHAN_INDEX_SECURITY_MAP]
+            if idx_ids:
+                resp = self.dhan.ticker_data({"IDX_I": idx_ids})
+                data_map = resp.get("data", {}) if isinstance(resp, dict) else {}
+                for sym in symbols:
+                    meta = DHAN_INDEX_SECURITY_MAP.get(sym.upper())
+                    if meta:
+                        sid = meta["security_id"]
+                        val = data_map.get(sid, {})
+                        if val and float(val.get("last_price", 0.0)) > 0:
+                            out[sym] = float(val.get("last_price", 0.0))
         except Exception as e:
-            log.warning("Dhan get_ltp_batch failed for %s: %s", symbols, e)
-            return {}
+            log.warning("Dhan ticker_data failed for %s: %s", symbols, e)
+
+        # Fallback to get_candles for any missing symbols
+        for sym in symbols:
+            if sym not in out:
+                try:
+                    bars = self.get_candles(sym, "1m", span=5)
+                    if bars:
+                        out[sym] = bars[-1].close
+                except Exception as fallback_e:
+                    log.warning("Dhan get_candles fallback failed for %s: %s", sym, fallback_e)
+        return out
 
     def get_quote(self, keys: list[str]) -> dict[str, Quote]:
         if not keys:
             return {}
+        quotes: dict[str, Quote] = {}
         try:
-            idx_ids = [int(DHAN_INDEX_SECURITY_MAP[s]["security_id"]) for s in keys if s.upper() in DHAN_INDEX_SECURITY_MAP]
-            if not idx_ids:
-                return {}
+            idx_ids = []
+            opt_ids = []
+            opt_map = {}
+            for s in keys:
+                up = s.upper()
+                if up in DHAN_INDEX_SECURITY_MAP:
+                    idx_ids.append(int(DHAN_INDEX_SECURITY_MAP[up]["security_id"]))
+                elif self._instruments_master:
+                    inst = self._instruments_master.get(s)
+                    if inst and inst.exchange_token:
+                        opt_ids.append(int(inst.exchange_token))
+                        opt_map[inst.exchange_token] = s
+            
+            # Fetch indices
+            if idx_ids:
+                resp = self.dhan.ohlc_data({"IDX_I": idx_ids})
+                data_map = resp.get("data", {}) if isinstance(resp, dict) else {}
+                for sym in keys:
+                    meta = DHAN_INDEX_SECURITY_MAP.get(sym.upper())
+                    if meta:
+                        sid = meta["security_id"]
+                        q = data_map.get(sid, {})
+                        if q and float(q.get("last_price", 0.0)) > 0:
+                            quotes[sym] = Quote(
+                                trading_symbol=sym,
+                                last_price=float(q.get("last_price", 0.0)),
+                                open_interest=0.0,
+                                volume=float(q.get("volume", 0.0)),
+                            )
+            
+            # Fetch options
+            if opt_ids:
+                # Dhan ohlc_data limits to a certain number of symbols, but let's assume it handles a normal chain depth.
+                resp = self.dhan.ohlc_data({"NSE_FNO": opt_ids})
+                data_map = resp.get("data", {}) if isinstance(resp, dict) else {}
+                for sid_str, q in data_map.items():
+                    if q and float(q.get("last_price", 0.0)) > 0:
+                        sym = opt_map.get(str(sid_str))
+                        if sym:
+                            quotes[sym] = Quote(
+                                trading_symbol=sym,
+                                last_price=float(q.get("last_price", 0.0)),
+                                open_interest=float(q.get("oi", 0.0)),
+                                volume=float(q.get("volume", 0.0)),
+                            )
+        except Exception as e:
+            log.warning("Dhan ohlc_data failed for %s: %s", keys, e)
 
-            resp = self.dhan.ohlc_data({"IDX_I": idx_ids})
-            quotes: dict[str, Quote] = {}
-            data_map = resp.get("data", {}) if isinstance(resp, dict) else {}
-
-            for sym in keys:
-                meta = DHAN_INDEX_SECURITY_MAP.get(sym.upper())
-                if meta:
-                    sid = meta["security_id"]
-                    q = data_map.get(sid, {})
+        # Fallback
+        for sym in keys:
+            if sym not in quotes:
+                bars = self.get_candles(sym, "1m", span=5)
+                if bars:
+                    last_bar = bars[-1]
                     quotes[sym] = Quote(
                         trading_symbol=sym,
-                        last_price=float(q.get("last_price", 0.0)),
+                        last_price=last_bar.close,
                         open_interest=0.0,
-                        volume=float(q.get("volume", 0.0)),
+                        volume=last_bar.volume,
                     )
-            return quotes
-        except Exception as e:
-            log.warning("Dhan get_quote failed for %s: %s", keys, e)
-            return {}
+        return quotes
 
     def get_option_chain(self, symbol: str, expiry: str) -> dict[str, Any]:
         """Fetch native Dhan Option Chain with Greeks, Open Interest, and IV."""
@@ -494,20 +573,63 @@ class DhanAdapter:
             return {}
 
     def get_instruments(self, *, force: bool = False) -> InstrumentMaster:
-        """Return cached Tradable Universe Instrument Master."""
+        """Return cached Tradable Universe Instrument Master by downloading from Dhan."""
+        import os
+        import csv
+        import requests
+        
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         if self._instruments is not None and self._instruments_day == today and not force:
             return self._instruments
 
-        instruments = [
-            Instrument("NIFTY", "NSE", "INDEX", 65, "INDEX", "NIFTY"),
-            Instrument("BANKNIFTY", "NSE", "INDEX", 30, "INDEX", "BANKNIFTY"),
-            Instrument("FINNIFTY", "NSE", "INDEX", 65, "INDEX", "FINNIFTY"),
-            Instrument("SENSEX", "BSE", "INDEX", 20, "INDEX", "SENSEX"),
-        ]
+        cache_file = f"/tmp/dhan_scrip_master_{today}.csv"
+        
+        if force or not os.path.exists(cache_file):
+            log.info("Downloading Dhan Instrument Master...")
+            try:
+                resp = requests.get("https://images.dhan.co/api-data/api-scrip-master.csv", timeout=15)
+                resp.raise_for_status()
+                with open(cache_file, "wb") as f:
+                    f.write(resp.content)
+            except Exception as e:
+                log.error("Failed to download Dhan Instrument Master: %s", e)
+                # Fallback to minimal hardcoded list
+                instruments = [
+                    Instrument("NIFTY", "NSE", "INDEX", 65, "INDEX", "NIFTY"),
+                    Instrument("BANKNIFTY", "NSE", "INDEX", 30, "INDEX", "BANKNIFTY"),
+                ]
+                master = InstrumentMaster(instruments, datetime.now(UTC))
+                self._instruments = master
+                self._instruments_day = today
+                return master
+
+        # Parse CSV
+        instruments = []
+        try:
+            with open(cache_file, "r", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    exch = row.get("EXCH_ID", "")
+                    symbol = row.get("TRADING_SYMBOL", "")
+                    # Basic filtering for Equity/Index/FNO
+                    if exch in ("NSE", "IDX_I", "BSE") and symbol:
+                        instruments.append(
+                            Instrument(
+                                symbol=symbol,
+                                exchange=exch,
+                                segment=row.get("INSTRUMENT", ""),
+                                lot_size=int(row.get("LOT_SIZE", 1)),
+                                name=row.get("CUSTOM_SYMBOL", symbol),
+                                token=row.get("SEM_SMST_SECURITY_ID", "")
+                            )
+                        )
+        except Exception as e:
+            log.error("Failed to parse Dhan Instrument Master: %s", e)
+
         master = InstrumentMaster(instruments, datetime.now(UTC))
         self._instruments = master
         self._instruments_day = today
+        log.info("Dhan Instrument Master loaded %d instruments.", len(instruments))
         return master
 
     # ------------------------------------------------------------------ streams

@@ -58,6 +58,8 @@ class BacktestTrade:
     win: bool
     strategy_name: str = ""
     slippage_cost: float = 0.0
+    instrument_details: str = ""   # e.g. "SELL 25000 PE / BUY 24500 PE"
+    capital_used: float = 0.0      # margin blocked for this trade
 
 
 @dataclass
@@ -178,6 +180,11 @@ def generate_synthetic_candles(
 
     return daily_candles
 
+# Module-level cache: maps (inst, days, from_date, to_date) -> (data, source, warning)
+# Ensures repeated backtest calls for the same window always return identical data.
+_BACKTEST_CACHE: dict = {}
+
+
 def load_candles_for_backtest(
     instrument: str = "NIFTY",
     days: int = 5,
@@ -193,12 +200,23 @@ def load_candles_for_backtest(
     4. Synthetic simulation model (fallback)
 
     Returns (candles_by_day, data_source_description, warning_message_or_None).
+
+    Results are cached per (instrument, days, from_date, to_date) so that
+    multiple calls within one backtest run always return identical data.
     """
+    from datetime import date as _date, timedelta as _td
     inst = instrument.upper()
 
-    # 1. Direct input
+    # 1. Direct input — never cached (caller owns the data)
     if candles_by_day:
         return candles_by_day, "USER_SUPPLIED_BARS", None
+
+    # Cache key — use params as-is so that different day selections stay separate.
+    # We do NOT force-pin dates here because the broker already handles span-based
+    # lookback internally, and forcing a Sunday/holiday to_date causes empty returns.
+    cache_key = (inst, days, from_date, to_date)
+    if cache_key in _BACKTEST_CACHE:
+        return _BACKTEST_CACHE[cache_key]
 
     # 2. Active Broker API (On-demand DhanHQ)
     if broker and hasattr(broker, "get_candles"):
@@ -232,49 +250,38 @@ def load_candles_for_backtest(
                     broker_daily.setdefault(dt_str, []).append(c)
 
                 if broker_daily:
+                    # Slice to exactly `days` sessions only if no custom date range is provided
+                    sorted_keys = sorted(broker_daily.keys())
+                    if not from_date and not to_date:
+                        chosen_keys = sorted_keys[-days:] if len(sorted_keys) >= days else sorted_keys
+                        broker_daily = {k: broker_daily[k] for k in chosen_keys}
+                    else:
+                        chosen_keys = sorted_keys
+                        
                     b_name = getattr(broker, "name", "dhan").upper()
-                    date_range_str = f"{from_date} to {to_date}" if from_date and to_date else f"{len(broker_daily)} sessions"
+                    date_range_str = f"{chosen_keys[0]} to {chosen_keys[-1]}" if chosen_keys else "0 sessions"
                     total_bars = sum(len(v) for v in broker_daily.values())
-                    return broker_daily, f"DHAN_ON_DEMAND ({b_name} API, {date_range_str}, {total_bars} bars)", None
+                    result = broker_daily, f"DHAN_ON_DEMAND ({b_name} API, {len(broker_daily)} sessions, {total_bars} bars)", None
+                    _BACKTEST_CACHE[cache_key] = result
+                    return result
         except Exception:
             pass
 
-    # 4. SQLite database ticks_1m
-    try:
-        from sentinel.db import Tick1m, session
+    # SQLite ticks_1m is intentionally NOT used for the event engine backtest.
+    # The stored 1m bars have compressed/aggregated volumes that corrupt the VMA
+    # filter, producing misleading results. Real exchange data (DhanHQ) must be used.
 
-        with session() as s:
-            rows = s.query(Tick1m).filter(Tick1m.symbol == inst).order_by(Tick1m.ts.asc()).all()
-            if rows:
-                db_daily: dict[str, list[Candle]] = {}
-                for r in rows:
-                    dt_str = r.ts.strftime("%Y-%m-%d")
-                    ts_str = r.ts.strftime("%Y-%m-%d %H:%M:00")
-                    c = Candle(
-                        symbol=inst,
-                        timestamp=ts_str,
-                        open=r.open,
-                        high=r.high,
-                        low=r.low,
-                        close=r.close,
-                        volume=r.volume,
-                    )
-                    db_daily.setdefault(dt_str, []).append(c)
-                if db_daily:
-                    sorted_d = sorted(db_daily.keys())
-                    chosen_d = sorted_d[-days:] if len(sorted_d) >= days else sorted_d
-                    res_map = {d: db_daily[d] for d in chosen_d}
-                    return res_map, f"SQLITE_TICKS_STORE ({len(res_map)} sessions)", None
-    except Exception:
-        pass
-
-    # 5. Synthetic Fallback
-    synthetic = generate_synthetic_candles(inst, days=days)
+    # No real data available — return empty with a clear error message
     warn = (
-        "Simulation evaluated on synthetic random-walk candles. "
-        "Connect DhanHQ Data API in .env to validate edge on real on-demand exchange market data (Check 03/04)."
+        "⚠ No real market data available. "
+        "Connect your DhanHQ broker in System settings and ensure DHAN_CLIENT_ID / DHAN_ACCESS_TOKEN "
+        "are configured in your .env file. "
+        "Backtest requires real 1-minute OHLCV data from the exchange."
     )
-    return synthetic, "SYNTHETIC_MODEL", warn
+    empty: dict[str, list[Candle]] = {}
+    result = empty, "NO_DATA (broker required)", warn
+    _BACKTEST_CACHE[cache_key] = result
+    return result
 
 
 class BacktestEngine:

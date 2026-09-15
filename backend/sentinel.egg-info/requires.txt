@@ -15,7 +15,7 @@ jsonschema==4.23.0
 python-json-logger==3.2.1
 boto3==1.35.92
 cryptography<44
-kiteconnect>=5.0.0
+dhanhq==2.2.0
 pytest==8.3.4
 pytest-asyncio==0.25.2
 ruff==0.8.6

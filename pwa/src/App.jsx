@@ -1,15 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Home, Zap, FlaskConical, Database, Settings } from 'lucide-react';
+import { Home, Zap, FlaskConical, Database, Settings, Ghost } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as api from './api.js';
 import { Banner, StateChip } from './components.jsx';
 import {
-  Config, DayEnd, Journal, Locked, Positions, Signals, System, Today,
-  Strategies, Backtest, DataScreen,
+  DayEnd, Journal, Locked, Positions, Signals, System, Today,
+  Strategies, Backtest, DataScreen, PaperTrading
 } from './screens.jsx';
 
 const TABS = [
   { id: 'home', label: 'Home', icon: Home },
+  { id: 'paper', label: 'Paper', icon: Ghost },
   { id: 'trade', label: 'Trade', icon: Zap },
   { id: 'backtest', label: 'Backtest', icon: FlaskConical },
   { id: 'data', label: 'Data', icon: Database },
@@ -24,7 +25,6 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [pushState, setPushState] = useState('');
   const [showDayEnd, setShowDayEnd] = useState(false);
-  const [showConfig, setShowConfig] = useState(false);
   const closeRef = useRef(null);
 
   const flash = useCallback((msg) => {
@@ -160,7 +160,6 @@ export default function App() {
               onClick={() => {
                 setTab(t.id);
                 setShowDayEnd(false);
-                setShowConfig(false);
               }}
               className="relative flex flex-col items-center gap-1 px-1 py-2 shrink-0 w-16"
             >
@@ -219,7 +218,6 @@ export default function App() {
                 onClick={() => {
                   setTab(t.id);
                   setShowDayEnd(false);
-                  setShowConfig(false);
                 }}
                 className={`relative flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all duration-200 ${
                   active ? 'bg-line-soft text-ink font-semibold' : 'text-muted hover:text-ink hover:bg-line-soft/50'
@@ -272,9 +270,7 @@ export default function App() {
           )}
           {toast && <Banner tone="ink">{toast}</Banner>}
 
-        {showConfig ? (
-          <Config onBack={() => setShowConfig(false)} flash={flash} />
-        ) : showDayEnd ? (
+        {showDayEnd ? (
           <>
             <button className="btn-ghost" onClick={() => setShowDayEnd(false)}>
               ← Back
@@ -294,6 +290,12 @@ export default function App() {
                   <h3 className="font-disp font-semibold text-lg text-ink mb-3 px-1">Active Positions</h3>
                   <Positions s={state} onSquareOff={onSquareOff} busy={busy === 'squareoff'} />
                 </div>
+              </div>
+            </div>
+            
+            <div className={tab === 'paper' ? 'block animate-in fade-in slide-in-from-bottom-2 duration-300' : 'hidden'}>
+              <div className="space-y-cardgap">
+                <PaperTrading s={state} />
               </div>
             </div>
 
@@ -325,7 +327,6 @@ export default function App() {
                 onKill={onKill}
                 onEnablePush={onEnablePush}
                 pushState={pushState}
-                onOpenConfig={() => setShowConfig(true)}
                 onOpenJournal={() => setShowDayEnd(true)}
                 onRefresh={refresh}
               />
