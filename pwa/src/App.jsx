@@ -25,6 +25,7 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [pushState, setPushState] = useState('');
   const [showDayEnd, setShowDayEnd] = useState(false);
+  const [btJob, setBtJob] = useState(null);
   const closeRef = useRef(null);
 
   const flash = useCallback((msg) => {
@@ -51,8 +52,15 @@ export default function App() {
     refresh();
     closeRef.current = api.liveSocket(
       (payload) => {
-        setState(payload);
         setConn('connected');
+        // Every /live frame carries a `type` discriminator now — full account
+        // snapshots are 'state'; other types (e.g. backtest progress) are handled
+        // by their own listeners and must not be treated as a state snapshot.
+        if (!payload?.type || payload.type === 'state') {
+          setState(payload);
+        } else if (payload.type === 'backtest') {
+          setBtJob(payload);
+        }
       },
       (s) => setConn(s),
     );
@@ -132,7 +140,7 @@ export default function App() {
         <div className="text-center max-w-xs">
           <img src="/logo.svg" alt="" width="56" height="56" className="mx-auto opacity-90" />
           <div className="num text-sec text-muted mt-4">
-            {conn === 'error' ? 'Backend unreachable' : 'Connecting to SENTINEL…'}
+            {conn === 'error' ? 'Backend unreachable' : 'Connecting to VECTRA_QUANT…'}
           </div>
           {toast && <div className="num text-eyebrow text-red mt-2">{toast}</div>}
           <button className="btn-ghost mt-6" onClick={refresh}>
@@ -197,7 +205,7 @@ export default function App() {
             <div className="w-8 h-8 rounded-full bg-ai grid place-items-center shadow-lg">
               <span className="text-white text-[15px]">S</span>
             </div>
-            SENTINEL
+            VECTRA_QUANT
             <span
               className="inline-block w-2 h-2 rounded-full ml-1"
               style={
@@ -245,7 +253,7 @@ export default function App() {
             <div className="w-8 h-8 rounded-full bg-ai grid place-items-center shadow-lg">
               <span className="text-white text-[15px]">S</span>
             </div>
-            SENTINEL
+            VECTRA_QUANT
             <span
               className="inline-block w-2 h-2 rounded-full ml-1"
               style={
@@ -311,7 +319,7 @@ export default function App() {
 
             <div className={tab === 'backtest' ? 'block animate-in fade-in slide-in-from-bottom-2 duration-300' : 'hidden'}>
               <div className="space-y-cardgap">
-                <Backtest s={state} />
+                <Backtest s={state} liveJob={btJob} />
               </div>
             </div>
 

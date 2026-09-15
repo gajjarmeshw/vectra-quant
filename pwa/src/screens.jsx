@@ -1,8 +1,9 @@
 /* The seven screens. docs/design_spec.md §3. */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Banner, Card, DayRail, Empty, Eyebrow, OriginTag, Row, SlTrack, Stat, StateChip,
   TradeDots, num, pnlColor, rupee, InstitutionalPostureCard,
+  ProgressRail, EquityCurve, MiniBars,
 } from './components.jsx';
 import * as api from './api.js';
 
@@ -29,7 +30,7 @@ export function PaperTrading({ s, onSquareOff }) {
             <span className="text-amber font-semibold">⚠️ You are currently in LIVE mode.</span>
           )}
           <br /><br />
-          To switch modes, please change <code className="bg-card px-1 py-0.5 rounded text-xs font-mono">IS_LIVE=false</code> in your <code className="bg-card px-1 py-0.5 rounded text-xs font-mono">.env</code> file and restart the Sentinel backend terminal.
+          To switch modes, please change <code className="bg-card px-1 py-0.5 rounded text-xs font-mono">IS_LIVE=false</code> in your <code className="bg-card px-1 py-0.5 rounded text-xs font-mono">.env</code> file and restart the VectraQuant backend terminal.
         </div>
       </Card>
       {isPaper && <Today s={s} onSquareOff={onSquareOff} />}
@@ -1019,13 +1020,15 @@ function TradeReplayLog({ trades = [] }) {
           const entryP = Number(t.entry_price || 0);
           const exitP = Number(t.exit_price || 0);
           const ptsDiff = exitP - entryP;
+          const [openDate, openTime] = (t.opened_at || '').split(' ');
+          const [, closeTime] = (t.closed_at || '').split(' ');
 
           return (
             <div
               key={idx}
               className="p-3 rounded-block bg-line-soft/40 border border-line text-xs num space-y-1.5"
             >
-              {/* Row 1: Trade # · Direction · PnL */}
+              {/* Row 1: Trade # · Direction · Symbol · PnL */}
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-ink">
@@ -1033,32 +1036,41 @@ function TradeReplayLog({ trades = [] }) {
                   </span>
                   <span
                     className={`chip text-[10px] font-bold px-1.5 py-0.5 ${
-                      t.direction === 'SHORT'
-                        ? 'bg-orange-soft text-orange border-orange'
-                        : 'bg-blue-soft text-blue border-blue'
+                      t.direction === 'PE'
+                        ? 'bg-amber-soft text-amber border-amber'
+                        : 'bg-ai-soft text-ai border-ai'
                     }`}
                   >
                     {t.direction}
                   </span>
-                  {/* Exit reason badge */}
-                  <span
-                    className={`chip text-[9px] font-semibold py-0.5 ${
-                      exitReason.includes('Target')
-                        ? 'bg-green-soft text-green border-green'
-                        : exitReason.includes('Stop')
-                        ? 'bg-red-soft text-red border-red'
-                        : 'bg-line-soft text-ink-2 border-line'
-                    }`}
-                  >
-                    {exitReason}
-                  </span>
+                  {t.symbol && (
+                    <span className="font-semibold text-ink-2 text-[11px]">
+                      {t.symbol}
+                      {t.expiry && <span className="text-muted font-normal"> · exp {t.expiry}</span>}
+                    </span>
+                  )}
                 </div>
                 <span className={`font-bold text-sm ${pnlColor(t.net_pnl)}`}>
                   {rupee(t.net_pnl, true)}
                 </span>
               </div>
 
-              {/* Row 2: Option Spread Details */}
+              {/* Row 1b: Exit reason */}
+              <div>
+                <span
+                  className={`chip text-[9px] font-semibold py-0.5 ${
+                    exitReason.includes('Target')
+                      ? 'bg-green-soft text-green border-green'
+                      : exitReason.includes('Stop')
+                      ? 'bg-red-soft text-red border-red'
+                      : 'bg-line-soft text-ink-2 border-line'
+                  }`}
+                >
+                  {exitReason}
+                </span>
+              </div>
+
+              {/* Row 2: Option Spread Details (credit-spread strategies only) */}
               {t.instrument_details && (
                 <div className="flex items-center gap-1.5 text-[11px]">
                   <span className="text-muted">Spread:</span>
@@ -1095,12 +1107,14 @@ function TradeReplayLog({ trades = [] }) {
               {/* Row 4: Time · Slippage/Fees/Qty · Capital */}
               <div className="flex justify-between text-[10px] text-muted pt-1 border-t border-line/60">
                 <span>
-                  {t.opened_at && t.closed_at ? `${t.opened_at} → ${t.closed_at} IST` : 'Intraday Bar Execution'}
+                  {openDate && openTime && closeTime
+                    ? `${openDate} · ${openTime} → ${closeTime} IST`
+                    : 'Intraday Bar Execution'}
                 </span>
                 <div className="flex items-center gap-2">
                   <span>Slippage: {rupee(t.slippage_cost || 0)} · Fees: {rupee(t.costs || 0)} · Qty: {t.qty || 50}</span>
                   {t.capital_used > 0 && (
-                    <span className="chip text-[9px] font-semibold bg-blue-soft text-blue border-blue px-1.5 py-0.5">
+                    <span className="chip text-[9px] font-semibold bg-ai-soft text-ai border-ai px-1.5 py-0.5">
                       Capital: {rupee(t.capital_used)}
                     </span>
                   )}
@@ -1114,7 +1128,7 @@ function TradeReplayLog({ trades = [] }) {
   );
 }
 
-export function Backtest() {
+export function Backtest({ liveJob } = {}) {
   const [inst, setInst] = useState('NIFTY');
   const [strat, setStrat] = useState('institutional_breakout');
   const [days, setDays] = useState(5);
@@ -1127,11 +1141,66 @@ export function Backtest() {
   const [toDate, setToDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [wiggle, setWiggle] = useState(true);
   const [slippage, setSlippage] = useState(true);
+
   const [res, setRes] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [jobId, setJobId] = useState(null);
+  const [job, setJob] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [submitError, setSubmitError] = useState('');
+  const jobIdRef = useRef(null);
+  jobIdRef.current = jobId;
+
+  const loading = job && (job.status === 'QUEUED' || job.status === 'RUNNING');
+
+  const loadHistory = () => {
+    api.listBacktestRuns(10).then((data) => setHistory(data.runs || [])).catch(() => {});
+  };
+
+  const applyProgress = (data) => {
+    setJob(data);
+    if (data.status === 'DONE') {
+      if (data.result) {
+        setRes(data.result);
+      } else {
+        api.getBacktestRun(jobIdRef.current).then((full) => full.result && setRes(full.result)).catch(() => {});
+      }
+      loadHistory();
+    } else if (['FAILED', 'CANCELLED', 'ABORTED'].includes(data.status)) {
+      loadHistory();
+    }
+  };
+
+  // Recover an in-flight job across a page refresh — the sim keeps running on
+  // the server's worker thread regardless of whether anyone is watching.
+  useEffect(() => {
+    api.listBacktestRuns(1).then((data) => {
+      const latest = (data.runs || [])[0];
+      if (latest && ['QUEUED', 'RUNNING'].includes(latest.status)) {
+        setJobId(latest.id);
+        setJob({ status: latest.status, phase: latest.status, pct: 0, sessions_done: 0, sessions_total: 0, session_date: '' });
+      }
+    }).catch(() => {});
+    loadHistory();
+  }, []);
+
+  // Fast path: live progress pushed over the /live WebSocket.
+  useEffect(() => {
+    if (liveJob && liveJob.job_id === jobIdRef.current) {
+      applyProgress(liveJob);
+    }
+  }, [liveJob]);
+
+  // Poll fallback — also the only path if the socket is down or reconnecting.
+  useEffect(() => {
+    if (!jobId || !loading) return;
+    const t = setInterval(() => {
+      api.getBacktestRun(jobId).then(applyProgress).catch(() => {});
+    }, 2000);
+    return () => clearInterval(t);
+  }, [jobId, loading]);
 
   const onRun = async () => {
-    setLoading(true);
+    setSubmitError('');
     try {
       const payload = {
         instrument: inst,
@@ -1145,17 +1214,29 @@ export function Backtest() {
       } else {
         payload.days = days;
       }
-      const data = await api.runStrategyBacktest(payload);
-      setRes(data.result || data);
+      const data = await api.submitBacktestRun(payload);
+      setRes(null);
+      setJobId(data.job_id);
+      setJob({ status: 'QUEUED', phase: 'QUEUED', pct: 0, sessions_done: 0, sessions_total: 0, session_date: '' });
     } catch (e) {
-      alert(e.message);
-    } finally {
-      setLoading(false);
+      setSubmitError(e.message);
     }
+  };
+
+  const onCancel = () => {
+    if (jobId) api.cancelBacktestRun(jobId).catch((e) => setSubmitError(e.message));
+  };
+
+  const onSelectHistoryRun = (row) => {
+    if (!row.result) return;
+    setRes(row.result);
+    setJobId(row.id);
+    setJob({ status: row.status, phase: row.status, pct: 100, sessions_done: 0, sessions_total: 0, session_date: '' });
   };
 
   const wiggleAnalysis = res?.wiggle_analysis || res?.wiggle_test;
   const checklist23 = res?.checklist_23;
+  const sessionItems = Object.entries(res?.session_pnls || {}).map(([label, value]) => ({ label, value }));
 
   return (
     <div className="space-y-cardgap">
@@ -1165,11 +1246,11 @@ export function Backtest() {
           <span className="chip text-[10px] text-ai bg-ai-soft border-ai-soft">Check 01–23</span>
         </div>
         <p className="text-body text-ink-2 mt-1.5">
-          Replay 1-minute OHLCV candles through dynamic algorithms via on-demand DhanHQ Data API. Evaluates honest slippage (Check 09) and parameter sensitivity (Check 17: Plateau vs Needle).
+          Replays real 1-minute OHLCV + option-chain OI/premium candles (IEA archive, 2021–present; falls back to on-demand DhanHQ for anything the archive doesn't cover). Evaluates honest slippage (Check 09) and parameter sensitivity (Check 17: Plateau vs Needle).
         </p>
 
         <div className="mt-4 space-y-3">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div>
               <label className="text-eyebrow num text-muted block mb-1">Index</label>
               <select
@@ -1182,6 +1263,11 @@ export function Backtest() {
                 <option value="SENSEX">SENSEX</option>
                 <option value="FINNIFTY">FINNIFTY</option>
               </select>
+              {inst !== 'NIFTY' && (
+                <p className="text-[10px] text-amber mt-1 leading-snug">
+                  Real archive covers NIFTY only — this index needs a live broker connection or will return NO_DATA.
+                </p>
+              )}
             </div>
             <div>
               <label className="text-eyebrow num text-muted block mb-1">Strategy</label>
@@ -1190,8 +1276,7 @@ export function Backtest() {
                 value={strat}
                 onChange={(e) => setStrat(e.target.value)}
               >
-                <option value="nifty_5d_breakout">Nifty 5-Day (Event)</option>
-                <option value="renko_strategy">Dynamic Renko (Event)</option>
+                <option value="renko_strategy">Dynamic Renko</option>
                 <option value="institutional_breakout">Breakout</option>
                 <option value="option_wall_squeeze">Wall Squeeze</option>
                 <option value="wall_mean_reversion">Mean Rev</option>
@@ -1270,6 +1355,14 @@ export function Backtest() {
           </button>
         </div>
       </Card>
+
+      {submitError && <Banner tone="red">{submitError}</Banner>}
+
+      {loading && <BacktestProgressCard job={job} onCancel={onCancel} />}
+
+      {job?.status === 'CANCELLED' && <Banner tone="amber">Backtest cancelled.</Banner>}
+      {job?.status === 'FAILED' && <Banner tone="red">Backtest failed: {job.error || 'unknown error'}</Banner>}
+      {job?.status === 'ABORTED' && <Banner tone="amber">Backtest aborted — the server restarted mid-run. Try again.</Banner>}
 
       {res && (
         <div className="space-y-cardgap">
@@ -1387,13 +1480,16 @@ export function Backtest() {
           {/* Performance Summary Card */}
           <Card>
             <Row
-              left={<Eyebrow>{res.strategy || strat} · {res.instrument} ({res.days} Days)</Eyebrow>}
+              left={<Eyebrow>{res.strategy || strat} · {res.instrument} ({res.days} Sessions)</Eyebrow>}
               right={
                 <span className={`num text-contract font-bold ${pnlColor(res.final_pnl)}`}>
                   {rupee(res.final_pnl, true)}
                 </span>
               }
             />
+            <div className="text-[11px] text-muted num mt-0.5">
+              Starting capital: {rupee(res.initial_capital)}
+            </div>
 
             <div className="grid grid-cols-3 gap-2 text-center text-xs num py-3 mt-3 bg-line-soft rounded-block">
               <div>
@@ -1428,6 +1524,32 @@ export function Backtest() {
             </div>
           </Card>
 
+          {/* Equity Curve */}
+          {(res.trades || []).length > 0 && (
+            <Card>
+              <Row
+                left={<Eyebrow>Equity Curve</Eyebrow>}
+                right={<span className="num text-[11px] text-muted">{res.trades.length} trades</span>}
+              />
+              <div className="mt-2">
+                <EquityCurve trades={res.trades} />
+              </div>
+            </Card>
+          )}
+
+          {/* Session-by-Session Breakdown */}
+          {sessionItems.length > 0 && (
+            <Card>
+              <Row
+                left={<Eyebrow>Session-by-Session P&amp;L</Eyebrow>}
+                right={<span className="num text-[11px] text-muted">{sessionItems.length} sessions</span>}
+              />
+              <div className="mt-2">
+                <MiniBars items={sessionItems} />
+              </div>
+            </Card>
+          )}
+
           {/* Interactive 23-Point Gauntlet Checklist Explorer */}
           {checklist23 && <GauntletChecklistExplorer checklist23={checklist23} />}
 
@@ -1435,7 +1557,78 @@ export function Backtest() {
           {(res.trades || []).length > 0 && <TradeReplayLog trades={res.trades} />}
         </div>
       )}
+
+      <RunHistory history={history} onSelect={onSelectHistoryRun} currentJobId={jobId} />
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------- Backtest sub-components (jobs/progress) */
+
+function BacktestProgressCard({ job, onCancel }) {
+  const pct = job?.pct || 0;
+  const elapsed = job?.elapsed_s || 0;
+  const done = job?.sessions_done || 0;
+  const total = job?.sessions_total || 0;
+  const eta = total > 0 && done > 0 ? Math.max(0, Math.round((elapsed / done) * (total - done))) : null;
+
+  return (
+    <Card className="space-y-3">
+      <Row
+        left={<Eyebrow>Running Backtest</Eyebrow>}
+        right={<span className="chip text-[10px] bg-ai-soft text-ai border-ai-soft">{job?.phase || job?.status}</span>}
+      />
+      <ProgressRail pct={pct} tone="ai" />
+      <div className="flex items-center justify-between text-[11px] num text-muted">
+        <span>
+          {total ? `Session ${done}/${total}` : 'Starting…'}
+          {job?.session_date ? ` · ${job.session_date}` : ''}
+        </span>
+        <span>
+          {elapsed.toFixed(1)}s elapsed{eta !== null ? ` · ~${eta}s left` : ''}
+        </span>
+      </div>
+      <button className="btn bg-red-soft text-red w-full" onClick={onCancel}>
+        Cancel
+      </button>
+    </Card>
+  );
+}
+
+function RunHistory({ history, onSelect, currentJobId }) {
+  if (!history || history.length === 0) return null;
+  return (
+    <Card>
+      <Eyebrow>Run History</Eyebrow>
+      <div className="mt-2 space-y-1.5">
+        {history.map((row) => {
+          const tone =
+            row.status === 'DONE' ? (row.result?.passes_checklist ? 'text-green' : 'text-ink-2')
+            : row.status === 'FAILED' ? 'text-red'
+            : 'text-muted';
+          const range = row.from_date ? `${row.from_date}${row.to_date ? `–${row.to_date}` : ''}` : `${row.days}d`;
+          return (
+            <button
+              key={row.id}
+              type="button"
+              onClick={() => onSelect(row)}
+              disabled={!row.result}
+              className={`w-full flex items-center justify-between text-left px-2.5 py-2 rounded-block border transition-colors ${
+                row.id === currentJobId ? 'border-ai/40 bg-ai-soft/20' : 'border-line'
+              } ${row.result ? 'hover:bg-line-soft cursor-pointer' : 'opacity-60 cursor-default'}`}
+            >
+              <span className="text-[11px] num">
+                <span className="font-semibold text-ink">{row.strategy}</span>
+                <span className="text-muted"> · {row.instrument} · {range}</span>
+              </span>
+              <span className={`text-[11px] num font-semibold ${tone}`}>
+                {row.status}{row.result ? ` · PF ${row.result.profit_factor}` : ''}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 

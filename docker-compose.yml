@@ -1,11 +1,11 @@
 version: '3.8'
 
 services:
-  sentinel:
+  vectra_quant:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: sentinel_app
+    container_name: vectra_quant_app
     ports:
       - "8000:8000"
     env_file:

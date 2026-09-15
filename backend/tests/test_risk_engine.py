@@ -1,4 +1,4 @@
-"""Executable spec for the SENTINEL risk engine (design doc §4.2, user-amended)."""
+"""Executable spec for the VECTRA_QUANT risk engine (design doc §4.2, user-amended)."""
 import os
 import sys
 
@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from datetime import datetime
 
-from sentinel.risk_engine import (
+from vectra_quant.risk_engine import (
     DayState,
     RejectReason,
     RiskConfig,
@@ -15,7 +15,13 @@ from sentinel.risk_engine import (
     size_position,
 )
 
-CFG = RiskConfig()          # user's live params: T=2500, L=1050, r=1200
+CFG = RiskConfig(             # explicit values these tests were written for
+    capital=15_000,
+    target_pct=2_500 / 15_000,          # 16.66%
+    loss_limit_pct=1_050 / 15_000,      # 7.00%
+    risk_per_trade_pct=1_200 / 15_000,  # 8.00%
+    base_trades=3,
+)
 T = lambda h, m: datetime(2026, 8, 4, h, m)
 
 

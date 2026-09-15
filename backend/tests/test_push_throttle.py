@@ -5,13 +5,13 @@ the floor for five minutes fired ~150 notifications at the phone. A suggestion m
 never be suppressed, though — that one is time-critical and each is distinct.
 """
 import pytest
-from sentinel.api.push import DEFAULT_REPEAT_COOLDOWN_S, REPEAT_COOLDOWN_S, Pusher
+from vectra_quant.api.push import DEFAULT_REPEAT_COOLDOWN_S, REPEAT_COOLDOWN_S, Pusher
 
 
 @pytest.fixture
 def sent(monkeypatch, tmp_path):
     """A Pusher with one fake subscription; records payloads instead of sending."""
-    from sentinel import db as db_mod
+    from vectra_quant import db as db_mod
     monkeypatch.setattr(db_mod, "DB_PATH", tmp_path / "push.db")
     monkeypatch.setattr(db_mod, "_engine", None, raising=False)
     monkeypatch.setattr(db_mod, "_SessionLocal", None, raising=False)
@@ -21,7 +21,7 @@ def sent(monkeypatch, tmp_path):
     p.subscribe("https://push.example/abc", "p256", "auth")
 
     calls = []
-    monkeypatch.setattr("sentinel.api.push.webpush",
+    monkeypatch.setattr("vectra_quant.api.push.webpush",
                         lambda **kw: calls.append(kw["data"]))
     return p, calls
 
@@ -52,7 +52,7 @@ def test_suggestions_are_never_throttled(sent):
 def test_cooldown_expiry_allows_a_resend(sent, monkeypatch):
     p, calls = sent
     clock = [1000.0]
-    monkeypatch.setattr("sentinel.api.push.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr("vectra_quant.api.push.time.monotonic", lambda: clock[0])
 
     p.send("SYSTEM", "feed degraded")
     p.send("SYSTEM", "feed degraded")
@@ -66,7 +66,7 @@ def test_cooldown_expiry_allows_a_resend(sent, monkeypatch):
 def test_unknown_kind_gets_the_default_window(sent, monkeypatch):
     p, calls = sent
     clock = [0.0]
-    monkeypatch.setattr("sentinel.api.push.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr("vectra_quant.api.push.time.monotonic", lambda: clock[0])
     p.send("SUGGESTION", "x")                  # known, uncapped
     p.send("WEIRD", "y")
     p.send("WEIRD", "y")

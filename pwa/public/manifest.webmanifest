@@ -1,6 +1,6 @@
 {
-  "name": "SENTINEL",
-  "short_name": "SENTINEL",
+  "name": "VECTRA_QUANT",
+  "short_name": "VECTRA_QUANT",
   "description": "Index-options day-trading guardian",
   "start_url": "/",
   "scope": "/",

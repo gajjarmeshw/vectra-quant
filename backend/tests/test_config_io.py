@@ -4,7 +4,7 @@ import shutil
 
 import pytest
 import yaml
-from sentinel import config as cfg
+from vectra_quant import config as cfg
 
 
 @pytest.fixture
@@ -41,12 +41,12 @@ def test_invalid_edit_never_reaches_disk(sandbox):
 
 def test_first_write_preserves_the_annotated_original(sandbox):
     live, _ = sandbox
-    assert "# SENTINEL" in live.read_text()    # comments present to begin with
+    assert "# VECTRA_QUANT" in live.read_text()    # comments present to begin with
     raw = yaml.safe_load(live.read_text())
     cfg.write_params(raw)
     backup = live.with_name("params.annotated.yaml")
-    assert backup.is_file() and "# SENTINEL" in backup.read_text()
-    assert "# SENTINEL" not in live.read_text()  # safe_dump drops them, as documented
+    assert backup.is_file() and "# VECTRA_QUANT" in backup.read_text()
+    assert "# VECTRA_QUANT" not in live.read_text()  # safe_dump drops them, as documented
 
 
 def test_reset_restores_factory_defaults(sandbox):

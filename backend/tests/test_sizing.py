@@ -1,5 +1,5 @@
 """Sizing gate: Rs.14,000 hard cap (D-003) and the Rs.7-12k preference (D-010)."""
-from sentinel.core.sizing import (
+from vectra_quant.core.sizing import (
     Candidate,
     atm_offset,
     nearest_atm,

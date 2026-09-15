@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for SENTINEL (Vite PWA + FastAPI Python Backend)
+# Multi-stage Dockerfile for VECTRA_QUANT (Vite PWA + FastAPI Python Backend)
 
 # Stage 1: Build PWA Frontend
 FROM node:20-alpine AS pwa-builder
@@ -34,4 +34,4 @@ ENV PYTHONUNBUFFERED=1 \
     PORT=8000
 
 # Run Uvicorn production server
-CMD ["uvicorn", "sentinel.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "vectra_quant.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

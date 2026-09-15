@@ -1,5 +1,5 @@
 """Cost model, verified against a hand-computed round trip (design §9 acceptance)."""
-from sentinel.brokers.costs import CostRates, leg_cost, net_pnl, round_trip_cost
+from vectra_quant.brokers.costs import CostRates, leg_cost, net_pnl, round_trip_cost
 
 R = CostRates()
 
@@ -61,13 +61,13 @@ def test_zero_quantity_is_free():
 def test_level_break_requires_a_cross_not_proximity(tmp_path, monkeypatch):
     """#12 — firing on distance alone meant spot resting 0.06% under PDL triggered on
     every tick and re-fired each debounce window, burning the daily LLM budget."""
-    from sentinel import db as db_mod
+    from vectra_quant import db as db_mod
     monkeypatch.setattr(db_mod, "DB_PATH", tmp_path / "lb.db")
     monkeypatch.setattr(db_mod, "_engine", None, raising=False)
     monkeypatch.setattr(db_mod, "_SessionLocal", None, raising=False)
     db_mod.init_db()
 
-    from sentinel.events.engine import EventEngine
+    from vectra_quant.events.engine import EventEngine
     e = EventEngine(thresholds={"level_break_pct": 0.05})
     levels = {"PDL": 24000.0}
 

@@ -5,9 +5,9 @@ from dotenv import load_dotenv
 sys.path.append(os.path.join(os.path.dirname(__file__), "backend"))
 load_dotenv()
 
-from sentinel.brokers.dhan import DhanAdapter
-from sentinel.data.orchestrator import DataOrchestrator
-from sentinel.strategies.dummy_rsi import DummyRsiStrategy
+from vectra_quant.brokers.dhan import DhanAdapter
+from vectra_quant.data.orchestrator import DataOrchestrator
+from vectra_quant.strategies.dummy_rsi import DummyRsiStrategy
 
 def test_orchestrator():
     # 1. Init Broker

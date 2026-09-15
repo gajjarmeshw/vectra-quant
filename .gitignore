@@ -1,6 +1,8 @@
 .env
 .env.local
 /data/
+/IEA_data_*/
+/IEA_data_*.tar.gz*
 *.db
 *.db-wal
 *.db-shm

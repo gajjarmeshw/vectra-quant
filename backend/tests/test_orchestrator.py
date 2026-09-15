@@ -8,10 +8,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sentinel.core.orchestrator import Orchestrator
-from sentinel.core.session_clock import session_date
-from sentinel.db import Trade, Violation, session, utcnow
-from sentinel.risk_engine import DayState
+from vectra_quant.core.orchestrator import Orchestrator
+from vectra_quant.core.session_clock import session_date
+from vectra_quant.db import Trade, Violation, session, utcnow
+from vectra_quant.risk_engine import DayState
 
 
 def _closed_trade(pnl: float, *, when=None, sdate: str | None = None) -> None:
@@ -46,7 +46,7 @@ def test_pnl_tick_drives_state_and_persists_curve(cfg):
     o.on_trade_opened()
     snap = o.on_pnl_tick(500.0)
     assert snap.day_pnl == 500.0
-    from sentinel.db import PnlCurve
+    from vectra_quant.db import PnlCurve
     with session() as s:
         assert s.query(PnlCurve).count() >= 1
 
@@ -89,7 +89,7 @@ def test_expiry_day_does_not_reduce_risk(cfg):
 
 
 def test_expiry_cutoff_still_applies(cfg):
-    from sentinel.risk_engine import RejectReason
+    from vectra_quant.risk_engine import RejectReason
     o = Orchestrator(cfg)
     d = o.can_enter(confidence=75, is_expiry_day=True,
                     when=datetime(2026, 8, 6, 14, 30))

@@ -7,9 +7,9 @@ from dotenv import load_dotenv
 sys.path.append(os.path.join(os.path.dirname(__file__), "backend"))
 load_dotenv()
 
-from sentinel.brokers.dhan import DhanAdapter
-from sentinel.data.orchestrator import DataOrchestrator
-from sentinel.strategies.nifty_5d_breakout import Nifty5DayBreakout
+from vectra_quant.brokers.dhan import DhanAdapter
+from vectra_quant.data.orchestrator import DataOrchestrator
+from vectra_quant.strategies.nifty_5d_breakout import Nifty5DayBreakout
 
 def run_event_backtest():
     print("Initializing Dhan Broker for Historical Data...")

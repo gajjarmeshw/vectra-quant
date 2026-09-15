@@ -1,5 +1,5 @@
 [project]
-name = "sentinel"
+name = "vectra_quant"
 version = "1.0.0"
 description = "AI-assisted human-in-the-loop day-trading console for Indian index options"
 readme = "README.md"
@@ -15,6 +15,7 @@ dependencies = [
     "httpx==0.28.1",
     "growwapi==1.5.0",
     "pandas==2.2.3",
+    "pyarrow==25.0.1",
     "pyotp==2.9.0",
     "pywebpush==2.0.3",
     "py-vapid==1.9.2",
@@ -42,7 +43,7 @@ line-length = 100
 target-version = "py311"
 exclude = [".venv", "pwa", "data"]
 # Provided verbatim per build plan §0.1 — never reformat.
-extend-exclude = ["backend/sentinel/risk_engine.py", "backend/tests/test_risk_engine.py"]
+extend-exclude = ["backend/vectra_quant/risk_engine.py", "backend/tests/test_risk_engine.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]

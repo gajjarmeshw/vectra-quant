@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Provision the SENTINEL host: EC2 t4g.small in ap-south-1 with an Elastic IP.
+# Provision the VECTRA_QUANT host: EC2 t4g.small in ap-south-1 with an Elastic IP.
 # Idempotent — safe to re-run; it adopts existing resources by Name tag.
 #
 #   ./scripts/provision_ec2.sh            # create / show
@@ -9,7 +9,7 @@
 set -euo pipefail
 
 REGION="${AWS_REGION:-ap-south-1}"
-NAME="${SENTINEL_NAME:-sentinel}"
+NAME="${VECTRA_QUANT_NAME:-vectra_quant}"
 TYPE="${INSTANCE_TYPE:-t4g.small}"
 DISK_GB="${DISK_GB:-20}"
 KEY_NAME="${KEY_NAME:-${NAME}-key}"
@@ -73,7 +73,7 @@ SG_ID="$(aws ec2 describe-security-groups --filters "Name=group-name,Values=${SG
 if [ -z "$SG_ID" ]; then
   say "creating security group"
   SG_ID="$(aws ec2 create-security-group --group-name "$SG_NAME" \
-           --description "SENTINEL: 22/80/443" --query 'GroupId' --output text)"
+           --description "VECTRA_QUANT: 22/80/443" --query 'GroupId' --output text)"
   MYIP="$(curl -fsS https://checkip.amazonaws.com || echo 0.0.0.0)"
   # SSH is restricted to the provisioning machine's current address, not the world.
   aws ec2 authorize-security-group-ingress --group-id "$SG_ID" \
@@ -117,7 +117,7 @@ BXV=$(curl -fsSL https://api.github.com/repos/docker/buildx/releases/latest | gr
 curl -fsSL "https://github.com/docker/buildx/releases/download/${BXV}/buildx-${BXV}.linux-${BX}" \
   -o /usr/local/lib/docker/cli-plugins/docker-buildx
 chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
-mkdir -p /opt/sentinel && chown ec2-user:ec2-user /opt/sentinel
+mkdir -p /opt/vectra_quant && chown ec2-user:ec2-user /opt/vectra_quant
 ' \
     --query 'Instances[0].InstanceId' --output text)"
   aws ec2 wait instance-running --instance-ids "$IID"
@@ -142,7 +142,7 @@ EIP="$(aws ec2 describe-addresses --allocation-ids "$ALLOC" \
 cat <<EOF
 
 ================================================================
-  SENTINEL host ready
+  VECTRA_QUANT host ready
 ================================================================
   instance   : $IID  ($TYPE, $REGION)
   elastic IP : $EIP

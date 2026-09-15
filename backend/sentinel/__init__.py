@@ -1,1 +1,0 @@
-"""SENTINEL backend package."""

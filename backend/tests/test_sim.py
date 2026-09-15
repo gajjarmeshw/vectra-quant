@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sentinel.brokers.base import (
+from vectra_quant.brokers.base import (
     BrokerError,
     Instrument,
     InstrumentMaster,
@@ -14,7 +14,7 @@ from sentinel.brokers.base import (
     Quote,
     Side,
 )
-from sentinel.brokers.sim import SimAdapter
+from vectra_quant.brokers.sim import SimAdapter
 
 SYM = "NIFTY2681124250CE"
 
@@ -153,7 +153,7 @@ def test_mark_updates_unrealized(sim):
 
 
 def test_cannot_modify_filled_order(sim):
-    from sentinel.brokers.base import OrderPatch
+    from vectra_quant.brokers.base import OrderPatch
     oid = sim.place_order(_buy())
     with pytest.raises(BrokerError, match="terminal"):
         sim.modify_order(oid, OrderPatch(price=150.0))

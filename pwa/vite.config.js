@@ -17,6 +17,7 @@ export default defineConfig({
       '/push': 'http://127.0.0.1:8000',
       '/report': 'http://127.0.0.1:8000',
       '/strategies': 'http://127.0.0.1:8000',
+      '/backtest': 'http://127.0.0.1:8000',
       '/broker': 'http://127.0.0.1:8000',
       '/data': 'http://127.0.0.1:8000',
       '/live': {

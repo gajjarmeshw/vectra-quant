@@ -25,9 +25,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from sentinel import config, logging_setup  # noqa: E402
-from sentinel.brokers.groww import GrowwAdapter  # noqa: E402
-from sentinel.core.session_clock import is_market_hours, now_ist  # noqa: E402
+from vectra_quant import config, logging_setup  # noqa: E402
+from vectra_quant.brokers.groww import GrowwAdapter  # noqa: E402
+from vectra_quant.core.session_clock import is_market_hours, now_ist  # noqa: E402
 
 WATCH_SECONDS = 300
 

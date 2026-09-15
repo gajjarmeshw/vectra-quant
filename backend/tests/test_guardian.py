@@ -10,7 +10,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sentinel.brokers.base import (
+from vectra_quant.brokers.base import (
     Instrument,
     Order,
     OrderStatus,
@@ -18,9 +18,9 @@ from sentinel.brokers.base import (
     Position,
     Side,
 )
-from sentinel.core.guardian import Guardian
-from sentinel.db import Trade, Violation, session
-from sentinel.risk_engine import DayState, RiskEngine
+from vectra_quant.core.guardian import Guardian
+from vectra_quant.db import Trade, Violation, session
+from vectra_quant.risk_engine import DayState, RiskEngine
 
 SYM = "NIFTY2681124250CE"
 INST = Instrument(trading_symbol=SYM, exchange="NSE", segment="FNO", lot_size=65,
@@ -47,7 +47,7 @@ class FakeBroker:
 
     def place_order(self, req):
         if self.fail_place:
-            from sentinel.brokers.base import BrokerError
+            from vectra_quant.brokers.base import BrokerError
             raise BrokerError("broker rejected: RMS block")
         self.placed.append(req)
         oid = f"OID{len(self.placed)}"
@@ -64,7 +64,7 @@ class FakeBroker:
             if o.order_id == oid:
                 o.status = OrderStatus.CANCELLED
                 return
-        from sentinel.brokers.base import BrokerError
+        from vectra_quant.brokers.base import BrokerError
         raise BrokerError(f"unknown order {oid}")
 
     def square_off_all(self):

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from sentinel import db as db_mod
+from vectra_quant import db as db_mod
 
 
 @pytest.fixture(autouse=True)
@@ -21,5 +21,5 @@ def temp_db(tmp_path, monkeypatch):
 @pytest.fixture
 def cfg():
     """The user's live parameters, with expiry parity per D-009."""
-    from sentinel.risk_engine import RiskConfig
+    from vectra_quant.risk_engine import RiskConfig
     return RiskConfig(expiry_risk_scale=1.0)

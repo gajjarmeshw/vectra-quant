@@ -13,7 +13,7 @@ import sys
 
 # Ensure backend is in path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from sentinel.db import state_get, state_set
+from vectra_quant.db import state_get, state_set
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("fetch_nse_oi")

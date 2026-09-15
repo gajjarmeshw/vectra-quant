@@ -1,17 +1,17 @@
-# SENTINEL — FACTORY DEFAULTS. Never written to at runtime.
+# VECTRA_QUANT — FACTORY DEFAULTS. Never written to at runtime.
 # "Reset all to defaults" in the PWA Config panel restores params.yaml from this
 # file. Edit this only to change what "default" means.
 # Build plan §3. Risk-engine values feed RiskConfig verbatim.
 
-capital: 15000
+capital: 120000
 
 daily:
-  target: 2500              # T
-  loss_limit: 1500          # lock at dayPnL <= -loss_limit (must be >= risk_per_trade)
-  risk_per_trade: 1200      # r
+  target_pct: 0.08              # 8% of capital = 9600
+  loss_limit_pct: 0.05          # 5% of capital = 6000
+  risk_per_trade_pct: 0.025     # 2.5% of capital = 3000
 
 trades:
-  base: 3
+  base: 2
   bonus_at_pct_target: 0.45 # realized >= 45% of T unlocks 4th trade
   cooldown_min: 0
   consecutive_loss_stop: 2

@@ -1,8 +1,8 @@
-/* SENTINEL service worker.
+/* VECTRA_QUANT service worker.
    Shell is cached; /state is network-first because stale trading state is worse
    than no trading state. Push notifications land here. */
 
-const SHELL = 'sentinel-shell-v2';
+const SHELL = 'vectra_quant-shell-v2';
 const SHELL_FILES = ['/', '/index.html', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
@@ -66,7 +66,7 @@ self.addEventListener('fetch', (e) => {
 });
 
 self.addEventListener('push', (e) => {
-  let data = { title: 'SENTINEL', body: 'Update', kind: 'SYSTEM' };
+  let data = { title: 'VECTRA_QUANT', body: 'Update', kind: 'SYSTEM' };
   try {
     data = e.data ? e.data.json() : data;
   } catch (_) {
@@ -74,7 +74,7 @@ self.addEventListener('push', (e) => {
   }
   const urgent = data.urgent || ['SUGGESTION', 'GUARDIAN', 'SYSTEM'].includes(data.kind);
   e.waitUntil(
-    self.registration.showNotification(data.title || 'SENTINEL', {
+    self.registration.showNotification(data.title || 'VECTRA_QUANT', {
       body: data.body || '',
       tag: data.kind || 'SYSTEM',
       renotify: urgent,

@@ -1,4 +1,4 @@
-# SENTINEL — the ONLY tunables file.
+# VECTRA_QUANT — the ONLY tunables file.
 # Every value here is editable at runtime via the PWA System screen
 # (typed CONFIRM, blocked 09:15-15:30 IST) or by editing this file + restart.
 # Build plan §3. Risk-engine values feed RiskConfig verbatim.

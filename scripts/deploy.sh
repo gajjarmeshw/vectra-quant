@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ship SENTINEL to the EC2 host and bring it up.
+# Ship VECTRA_QUANT to the EC2 host and bring it up.
 #   ./scripts/deploy.sh <elastic-ip>
 #
 # Builds the PWA locally (so the box needs no Node), rsyncs the repo minus
@@ -11,9 +11,9 @@ IP="${1:-}"
 NO_START=0
 [ "${2:-}" = "--no-start" ] && NO_START=1
 
-KEY_FILE="${KEY_FILE:-$HOME/.ssh/sentinel-key.pem}"
+KEY_FILE="${KEY_FILE:-$HOME/.ssh/vectra_quant-key.pem}"
 REMOTE="ec2-user@${IP}"
-DIR=/opt/sentinel
+DIR=/opt/vectra_quant
 SITE="${IP//./-}.sslip.io"
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 

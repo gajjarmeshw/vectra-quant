@@ -1,6 +1,6 @@
 """Kill switch: persistence, typed re-enable, zero side effects while OFF."""
-from sentinel.core.killswitch import KillSwitch
-from sentinel.db import Violation, session
+from vectra_quant.core.killswitch import KillSwitch
+from vectra_quant.db import Violation, session
 
 
 def test_defaults_on_fresh_db():
@@ -60,7 +60,7 @@ def test_engine_refuses_entry_when_switch_off(cfg):
     """The engine's own gate, independent of the DB switch."""
     from datetime import datetime
 
-    from sentinel.risk_engine import RejectReason, RiskEngine
+    from vectra_quant.risk_engine import RejectReason, RiskEngine
     e = RiskEngine(cfg, kill_switch_on=False)
     d = e.can_enter(datetime(2026, 8, 6, 11, 0), confidence=95)
     assert not d.allowed and d.reason == RejectReason.KILL_SWITCH

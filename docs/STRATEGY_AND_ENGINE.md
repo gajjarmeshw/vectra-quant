@@ -1,13 +1,13 @@
-# SENTINEL — Strategy & Engine Master Document
+# VECTRA_QUANT — Strategy & Engine Master Document
 
 **Version:** 2.0 (Consolidated)
-**Purpose:** This document serves as the single source of truth for the SENTINEL algorithmic trading engine, backtesting procedures, architecture, and operational runbook.
+**Purpose:** This document serves as the single source of truth for the VECTRA_QUANT algorithmic trading engine, backtesting procedures, architecture, and operational runbook.
 
 ---
 
 ## 1. System Architecture & Engine
 
-SENTINEL is an AI-assisted, human-in-the-loop day-trading console for Indian index options (NIFTY on NSE, SENSEX on BSE). It operates on a decoupled client-server architecture.
+VECTRA_QUANT is an AI-assisted, human-in-the-loop day-trading console for Indian index options (NIFTY on NSE, SENSEX on BSE). It operates on a decoupled client-server architecture.
 
 ### 1.1 Architecture Map
 - **Backend**: Python-based REST and WebSocket server built with FastAPI (`0.115.6`), Uvicorn, and SQLAlchemy.
@@ -18,7 +18,7 @@ SENTINEL is an AI-assisted, human-in-the-loop day-trading console for Indian ind
 - **Database**: SQLite (via SQLAlchemy) running in WAL mode, handling trade journals, LLM calls, and configuration parameters.
 
 ### 1.2 Enforcement Modes
-SENTINEL runs two parallel enforcement modes to protect capital:
+VECTRA_QUANT runs two parallel enforcement modes to protect capital:
 | Mode | Scope | Power |
 |---|---|---|
 | **Gatekeeper** | Orders approved inside the PWA | Absolute. Orders cannot reach the broker if they violate risk checks. |
@@ -32,7 +32,7 @@ SENTINEL runs two parallel enforcement modes to protect capital:
 
 ## 2. Institutional Strategy
 
-SENTINEL executes algorithmic trading logic, heavily relying on institutional footprint detection.
+VECTRA_QUANT executes algorithmic trading logic, heavily relying on institutional footprint detection.
 
 ### 2.1 Core Strategy (Institutional Breakout)
 - Identifies "Long Buildup" (Whale Buying) and "Short Buildup" (Whale Selling) using Option Chain Open Interest (OI) diffing and Put-Call Ratios (PCR).
@@ -48,7 +48,7 @@ SENTINEL executes algorithmic trading logic, heavily relying on institutional fo
 
 ## 3. Backtesting Process
 
-SENTINEL features a custom, on-demand backtesting engine built to validate strategy efficacy over historical 1-minute candle data before live deployment.
+VECTRA_QUANT features a custom, on-demand backtesting engine built to validate strategy efficacy over historical 1-minute candle data before live deployment.
 
 ### 3.1 On-Demand Backtesting Engine
 - Accessible via the PWA (Backtest Tab) or the `/strategies/backtest` API.
@@ -77,7 +77,7 @@ Strategies must pass the "Gauntlet Scorecard" to be approved for live trading:
   - Deploy Code: `./scripts/deploy.sh <ip>`
 
 ### 4.2 Known Operational Caveats
-- **Manual Trade Conflicts (OCO Stops)**: If you manually place a trade in Groww and immediately attach an OCO stop, SENTINEL's Guardian might simultaneously attach an SL-M (within 60s). If the market triggers both, you will end up holding a naked short position. Ensure `guardian.sl_attach_deadline_s` is calibrated or manually disable Guardian if using OCO aggressively.
+- **Manual Trade Conflicts (OCO Stops)**: If you manually place a trade in Groww and immediately attach an OCO stop, VECTRA_QUANT's Guardian might simultaneously attach an SL-M (within 60s). If the market triggers both, you will end up holding a naked short position. Ensure `guardian.sl_attach_deadline_s` is calibrated or manually disable Guardian if using OCO aggressively.
 - **Backups**: Daily SQLite dumps to S3 happen at 16:00 IST (requires `BACKUP_S3_BUCKET` in `.env`).
 
 ### 4.3 Configurations

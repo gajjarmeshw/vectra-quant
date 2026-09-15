@@ -192,9 +192,9 @@ export function Stat({ label, value, sub, tone = '' }) {
 
 export function Row({ left, right, className = '' }) {
   return (
-    <div className={`flex items-center justify-between ${className}`}>
-      <div>{left}</div>
-      <div className="text-right">{right}</div>
+    <div className={`flex items-center justify-between gap-3 ${className}`}>
+      <div className="min-w-0">{left}</div>
+      <div className="text-right shrink-0 whitespace-nowrap">{right}</div>
     </div>
   );
 }
@@ -214,6 +214,85 @@ export function Banner({ tone = 'amber', children }) {
     <div className={`num text-chip text-center py-2 px-3 rounded-block ${map[tone]}`}>
       {children}
     </div>
+  );
+}
+
+/* Determinate progress bar for a running job — visual sibling of DayRail,
+   but a single fill (no floor/target ticks) since a backtest has one
+   monotonic percentage rather than a P&L position that can move either way. */
+export function ProgressRail({ pct = 0, tone = 'ai' }) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const fill = { ai: 'bg-ai', green: 'bg-green', amber: 'bg-amber' }[tone] || 'bg-ai';
+  return (
+    <div className="relative h-2.5 rounded-pill bg-line border border-line/60 overflow-hidden">
+      <motion.div
+        className={`absolute inset-y-0 left-0 rounded-pill ${fill}`}
+        animate={{ width: `${clamped}%` }}
+        transition={{ type: 'spring', stiffness: 80, damping: 20 }}
+      />
+    </div>
+  );
+}
+
+/* Small vertical bar chart — value per label, colored by sign. Used for
+   per-session P&L breakdowns; the wiggle-test curve has its own renderer
+   since it plots a single non-signed metric (profit factor) against labeled
+   parameter steps rather than a signed value per session. */
+export function MiniBars({ items, height = 64 }) {
+  if (!items || items.length === 0) return null;
+  const max = Math.max(1, ...items.map((i) => Math.abs(i.value)));
+  return (
+    <div className="flex items-end gap-[3px] overflow-x-auto pb-1" style={{ height }}>
+      {items.map((it, idx) => {
+        const h = Math.max(2, (Math.abs(it.value) / max) * (height - 4));
+        return (
+          <div key={idx} className="flex flex-col items-center justify-end shrink-0" style={{ width: 6, height }} title={`${it.label}: ${it.value}`}>
+            <div
+              className={`w-full rounded-[1px] ${it.value >= 0 ? 'bg-green' : 'bg-red'}`}
+              style={{ height: h }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* Cumulative equity curve + drawdown shading, from a chronological list of
+   trade net P&Ls. Hand-rolled inline SVG — no charting library in this app,
+   and one wasn't worth adding for a single line + one shaded area. */
+export function EquityCurve({ trades = [], height = 140 }) {
+  if (!trades || trades.length === 0) return null;
+
+  let running = 0;
+  let peak = 0;
+  const points = trades.map((t) => {
+    running += Number(t.net_pnl) || 0;
+    peak = Math.max(peak, running);
+    return { equity: running, drawdown: peak - running };
+  });
+
+  const width = 600; // viewBox units; scales to container via preserveAspectRatio
+  const maxEquity = Math.max(0, ...points.map((p) => p.equity));
+  const minEquity = Math.min(0, ...points.map((p) => p.equity));
+  const span = maxEquity - minEquity || 1;
+  const n = points.length;
+  const x = (i) => (n === 1 ? width / 2 : (i / (n - 1)) * width);
+  const y = (v) => height - ((v - minEquity) / span) * height;
+
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(p.equity).toFixed(1)}`).join(' ');
+  const zeroY = y(0).toFixed(1);
+  const areaPath = `${linePath} L ${x(n - 1).toFixed(1)} ${zeroY} L ${x(0).toFixed(1)} ${zeroY} Z`;
+
+  const finalEquity = points[points.length - 1].equity;
+  const lineColor = finalEquity >= 0 ? '#10B981' : '#EF4444';
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="w-full" style={{ height }}>
+      <line x1="0" y1={zeroY} x2={width} y2={zeroY} stroke="currentColor" className="text-line" strokeWidth="1" strokeDasharray="3,3" />
+      <path d={areaPath} fill={lineColor} opacity="0.08" />
+      <path d={linePath} fill="none" stroke={lineColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
   );
 }
 

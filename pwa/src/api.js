@@ -5,7 +5,7 @@ export const API_BASE = import.meta.env.VITE_API_BASE || '';
 const KEY = import.meta.env.VITE_API_KEY || '';
 
 function headers(extra = {}) {
-  return { 'Content-Type': 'application/json', 'X-Sentinel-Key': KEY, ...extra };
+  return { 'Content-Type': 'application/json', 'X-VectraQuant-Key': KEY, ...extra };
 }
 
 async function req(path, opts = {}) {
@@ -48,13 +48,21 @@ export const squareOff = () => req('/squareoff', { method: 'POST' });
 export const setPreset = (preset) =>
   req('/config/preset', { method: 'POST', body: JSON.stringify({ preset }) });
 
-export const runBacktest = (params) =>
-  req('/report/backtest', { method: 'POST', body: JSON.stringify(params) });
-
 export const getStrategies = () => req('/strategies');
 
-export const runStrategyBacktest = (params) =>
-  req('/strategies/backtest', { method: 'POST', body: JSON.stringify(params) });
+/* Job-based backtest: submit returns a job_id immediately (202) — the sim runs
+   on a background worker thread, never on the request. Progress streams over
+   the /live socket as {type:'backtest', ...} frames; getBacktestRun is the
+   REST fallback (also how a page refresh recovers a job already in flight). */
+export const submitBacktestRun = (params) =>
+  req('/backtest/runs', { method: 'POST', body: JSON.stringify(params) });
+
+export const getBacktestRun = (jobId) => req(`/backtest/runs/${jobId}`);
+
+export const cancelBacktestRun = (jobId) =>
+  req(`/backtest/runs/${jobId}/cancel`, { method: 'POST' });
+
+export const listBacktestRuns = (limit = 20) => req(`/backtest/runs?limit=${limit}`);
 
 export const setActiveStrategy = (payload) =>
   req('/strategies/active', { method: 'POST', body: JSON.stringify(payload) });

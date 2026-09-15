@@ -20,10 +20,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from sentinel import config, logging_setup  # noqa: E402
-from sentinel.brokers.groww import GrowwAdapter  # noqa: E402
-from sentinel.core.session_clock import now_ist, session_date  # noqa: E402
-from sentinel.core.sizing import size_with_cap  # noqa: E402
+from vectra_quant import config, logging_setup  # noqa: E402
+from vectra_quant.brokers.groww import GrowwAdapter  # noqa: E402
+from vectra_quant.core.session_clock import now_ist, session_date  # noqa: E402
+from vectra_quant.core.sizing import size_with_cap  # noqa: E402
 
 PASS, FAIL, WARN = "PASS", "FAIL", "WARN"
 results: list[tuple[str, str, str]] = []
@@ -38,7 +38,7 @@ def record(step: str, verdict: str, detail: str = "") -> None:
 def main() -> int:
     logging_setup.setup("ERROR")
     s = config.get()
-    print(f"\nSENTINEL pre-market drill · {now_ist().strftime('%Y-%m-%d %H:%M:%S IST')}")
+    print(f"\nVECTRA_QUANT pre-market drill · {now_ist().strftime('%Y-%m-%d %H:%M:%S IST')}")
     print(f"mode={s.mode} capital={s.capital:.0f} target={s.risk.target:.0f} "
           f"loss_limit={s.risk.loss_limit:.0f} r={s.risk.risk_per_trade:.0f}")
     print("-" * 66)

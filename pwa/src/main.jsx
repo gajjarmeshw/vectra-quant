@@ -6,7 +6,7 @@ import './index.css';
 // One-shot cleanup: a build that shipped a demo mode left this key on devices that
 // used it. Nothing reads it any more; clear it so no stale flag can linger.
 try {
-  localStorage.removeItem('sentinel.demo');
+  localStorage.removeItem('vectra_quant.demo');
 } catch {
   /* private mode / storage disabled */
 }

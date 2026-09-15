@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 
 import pytest
 from freezegun import freeze_time
-from sentinel.brokers.base import (
+from vectra_quant.brokers.base import (
     Instrument,
     InstrumentMaster,
     Order,
@@ -23,11 +23,11 @@ from sentinel.brokers.base import (
     Quote,
     Side,
 )
-from sentinel.core.guardian import Guardian
-from sentinel.core.killswitch import KillSwitch
-from sentinel.core.lifecycle import Lifecycle
-from sentinel.core.orchestrator import Orchestrator
-from sentinel.db import Trade, session, utcnow
+from vectra_quant.core.guardian import Guardian
+from vectra_quant.core.killswitch import KillSwitch
+from vectra_quant.core.lifecycle import Lifecycle
+from vectra_quant.core.orchestrator import Orchestrator
+from vectra_quant.db import Trade, session, utcnow
 
 SYM = "SENSEX2680678800CE"
 OTHER = "NIFTY2681124600PE"
@@ -178,7 +178,7 @@ def _open_trade(broker, symbol=SYM, minutes_ago=0, time_stop=0):
     sid = str(uuid.uuid4()) if time_stop else None
     with session() as s:
         if sid:
-            from sentinel.db import Suggestion
+            from vectra_quant.db import Suggestion
             s.add(Suggestion(id=sid, ts=utcnow(), action="SUGGEST",
                              time_stop_minutes=time_stop, trading_symbol=symbol))
         s.add(Trade(
@@ -449,7 +449,7 @@ def test_substituted_strike_gets_prices_rescaled(stack):
     """#5 — the order used to go out priced for the contract it was NOT buying,
     which could put the stop above the entry so it fired instantly."""
     lc, broker, _o = stack
-    from sentinel.core.sizing import Candidate
+    from vectra_quant.core.sizing import Candidate
 
     cheap = Candidate(trading_symbol=OTHER, strike=24600.0, side="CE", premium=65.0,
                       lot_size=65, atm_offset=0, open_interest=5000, volume=2000)
@@ -485,7 +485,7 @@ def test_target_exit_is_tick_driven_and_spares_your_stop(stack):
 
     Target exits with a MARKET order when the premium reaches it. No resting target
     order is created, and a stop the trader placed themselves is left untouched —
-    only the stop SENTINEL rested is cancelled.
+    only the stop VECTRA_QUANT rested is cancelled.
     """
     lc, broker, orch = stack
     tid = _open_trade(broker)
