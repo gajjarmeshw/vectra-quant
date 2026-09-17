@@ -28,7 +28,7 @@ const cases = {
   Positions: <S.Positions s={state} onSquareOff={() => {}} busy={false} />,
   Signals: <S.Signals s={state} onApprove={() => {}} onReject={() => {}} busy="" />,
   Reports: <S.Reports />,
-  Strategies: <S.Strategies s={state} onRefresh={() => {}} />,
+  Trade: <S.Trade s={state} onApprove={() => {}} onReject={() => {}} busy="" onRefresh={() => {}} />,
   System: <S.System s={state} onKill={() => {}} onEnablePush={() => {}} pushState="" onRefresh={() => {}} />,
   Backtest: <S.Backtest s={state} />,
   DataScreen: <S.DataScreen s={state} onRefresh={() => {}} />,
@@ -44,4 +44,30 @@ for (const [name, el] of Object.entries(cases)) {
     console.log(`FAIL ${name.padEnd(12)} ${e.message}`);
   }
 }
+
+/* --------------------------------------------------------------- assertions
+ * Rendering is not enough for feed liveness. The console reported an
+ * order-flow recorder as live off a health file written twelve hours earlier,
+ * because the old test was `connected || age < 15` and a stale `connected:
+ * true` short-circuited the recency check. In a trading console that is the
+ * difference between "we are capturing depth" and silently recording nothing,
+ * so it gets real assertions.
+ */
+const ago = (s) => new Date(Date.now() - s * 1000).toISOString();
+const checks = [
+  ['no health file at all', S.feedLiveness(null), false],
+  ['connected, just written', S.feedLiveness({ connected: true, last_update_at: ago(5) }), true],
+  ['connected but 12h stale', S.feedLiveness({ connected: true, last_update_at: ago(43200) }), false],
+  ['connected but 5m stale', S.feedLiveness({ connected: true, last_update_at: ago(300) }), false],
+  ['fresh but disconnected', S.feedLiveness({ connected: false, last_update_at: ago(5) }), false],
+  ['no timestamp', S.feedLiveness({ connected: true }), false],
+];
+for (const [label, got, want] of checks) {
+  const ok = got.live === want;
+  if (!ok) bad += 1;
+  console.log(
+    `${ok ? 'PASS' : 'FAIL'} feedLiveness  ${label.padEnd(26)} live=${got.live} (want ${want})`,
+  );
+}
+
 process.exit(bad ? 1 : 0);

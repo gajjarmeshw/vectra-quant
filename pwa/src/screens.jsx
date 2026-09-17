@@ -875,423 +875,526 @@ export function Reports() {
 
 /* ---------------------------------------------------------------- Strategies */
 
-export function Strategies({ s, onRefresh }) {
+/* ------------------------------------------------------------------ Trade */
+
+/* How long a recorder health file may go unwritten before we stop calling the
+   feed live. The recorders write on every batch, so 60s is already generous. */
+const FEED_STALE_S = 60;
+
+/* Liveness from one recorder-health entry.
+ *
+ * The old test was `health.connected || age < 15`, and the `||` is the whole
+ * problem: `connected` is simply the last value the recorder wrote to disk
+ * before it died, so a health file from twelve hours ago still reported the
+ * feed as live and the recency check never ran. It cost nothing to notice —
+ * Thunderbolt showed "all feeds live" overnight off a file last touched at
+ * 13:27 the previous afternoon, while breadth showed "down" only because it
+ * had never written a file at all.
+ *
+ * A feed is live when the recorder says it is connected AND has written
+ * recently. Both, never either. */
+export function feedLiveness(entry) {
+  if (!entry) return { live: false, ageS: null, why: 'no health file — recorder has never run' };
+  const ageS = entry.last_update_at
+    ? Math.round((Date.now() - new Date(entry.last_update_at).getTime()) / 1000)
+    : null;
+  if (ageS == null) return { live: false, ageS: null, why: 'health file carries no timestamp' };
+  if (ageS > FEED_STALE_S) {
+    return { live: false, ageS, why: `last wrote ${fmtAge(ageS)} ago — recorder is not running` };
+  }
+  if (!entry.connected) return { live: false, ageS, why: entry.last_error || 'recorder reports disconnected' };
+  return { live: true, ageS, why: `updated ${ageS}s ago` };
+}
+
+function fmtAge(s) {
+  if (s == null) return '—';
+  if (s < 90) return `${s}s`;
+  if (s < 5400) return `${Math.round(s / 60)}m`;
+  if (s < 172800) return `${Math.round(s / 3600)}h`;
+  return `${Math.round(s / 86400)}d`;
+}
+
+/* Which endpoint backs a strategy's live order flow, and what its recorder
+   health is keyed by. Only `live_only` strategies have one. */
+const ORDERFLOW = {
+  thunderbolt: { fetch: () => api.getThunderboltStatus(), conns: [null] },
+  breadth: {
+    fetch: () => api.getBreadthStatus(),
+    conns: ['equities_conn0', 'equities_conn1', 'options_conn0'],
+  },
+};
+
+function useOrderFlowStatus(name) {
+  const [status, setStatus] = useState(null);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    const spec = ORDERFLOW[name];
+    if (!spec) {
+      setStatus(null);
+      setErr('');
+      return undefined;
+    }
+    let cancelled = false;
+    const poll = () =>
+      spec
+        .fetch()
+        .then((d) => !cancelled && (setStatus(d), setErr('')))
+        .catch((e) => !cancelled && setErr(e.message));
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [name]);
+
+  if (!ORDERFLOW[name]) return null;
+  const conns = (ORDERFLOW[name].conns || []).map((key) => ({
+    label: key ? key.replace('_conn', ' #') : 'depth feed',
+    ...feedLiveness(key ? status?.recorder_health?.[key] : status?.recorder_health),
+  }));
+  return { status, err, conns, allLive: conns.length > 0 && conns.every((c) => c.live) };
+}
+
+/* One pass/fail line. The whole point of this screen is that a strategy can be
+   switched on and still be incapable of firing, so a failed check always says
+   why in plain words rather than just going red. */
+function Check({ ok, warn, label, detail }) {
+  const tone = ok ? 'text-green' : warn ? 'text-amber' : 'text-red';
+  const glyph = ok ? '✓' : warn ? '!' : '✕';
+  return (
+    <div className="flex items-start gap-2.5 py-2 border-b border-line/50 last:border-0">
+      <span
+        className={`num text-f11 font-bold w-4 h-4 mt-px grid place-items-center rounded-full shrink-0 ${tone} ${
+          ok ? 'bg-green-soft' : warn ? 'bg-amber-soft' : 'bg-red-soft'
+        }`}
+      >
+        {glyph}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-sec text-ink font-medium">{label}</div>
+        {detail && <div className="num text-f10 text-muted mt-0.5 leading-relaxed">{detail}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* Human names for the three execution routes, and — more importantly — what
+   each one implies about how (and whether) the strategy can actually fire. */
+const ROUTE = {
+  standard: {
+    label: 'Tick loop',
+    detail: 'Evaluated in-process on every market event by the app scheduler.',
+  },
+  live_only: {
+    label: 'External recorder',
+    detail:
+      'Evaluated by its own order-flow script, not the app. The app never calls evaluate() for it, so the script must be running separately.',
+  },
+  weekly_multiday: {
+    label: 'Weekly engine',
+    detail: 'Driven by WeeklySpreadEngine on its own multi-day schedule, not the tick loop.',
+  },
+};
+
+function StrategyDetail({ st, isActive, saving, onToggle }) {
+  const accent = STRATEGY_ACCENT[st.name] || 'ai';
+  const A = ACCENT_CLASSES[accent];
+  const mode = st.execution_mode || 'standard';
+  const route = ROUTE[mode] || ROUTE.standard;
+  const of = useOrderFlowStatus(st.name);
+
+  const dep = st.dependency_health || {};
+  const symbols = Object.entries(dep.symbols || {});
+  const timeframes = Object.entries(dep.timeframes || {});
+  const depAll = [...symbols, ...timeframes];
+  const depBad = depAll.filter(([, v]) => v !== 'OK');
+
+  const params = Object.entries(st.default_params || {});
+  const tuned = new Set(st.wiggle_params || []);
+
+  return (
+    <div className="space-y-cardgap">
+      <Card className="!p-0 overflow-hidden">
+        <div className={`h-[3px] w-full ${isActive ? A.bg : 'bg-line'}`} />
+        <div className="p-cardpad">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className={`eyebrow ${isActive ? A.text : ''}`}>{st.name.replace(/_/g, ' ')}</div>
+              <h3 className="font-disp text-f15 font-semibold text-ink mt-1 leading-snug">
+                {st.display_name || st.name}
+              </h3>
+              <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                <span className="chip">v{st.version || '1.0'}</span>
+                <span className={`chip ${A.chip}`}>{route.label}</span>
+                {(st.instrument_focus || []).map((i) => (
+                  <span key={i} className="chip">{i}</span>
+                ))}
+              </div>
+            </div>
+            <button
+              className={isActive ? 'btn-ghost !w-auto !py-2 px-4 shrink-0' : 'btn-primary !w-auto !py-2 px-4 shrink-0'}
+              disabled={saving}
+              onClick={() => onToggle(st.name)}
+            >
+              {saving ? '…' : isActive ? 'Deactivate' : 'Activate'}
+            </button>
+          </div>
+          <p className="text-sec text-ink-2 mt-3 leading-relaxed">{st.description}</p>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionHeader
+          title="Readiness checks"
+          sub="every condition that must hold before this strategy can place an order"
+        />
+        <div>
+          <Check
+            ok={isActive}
+            label={isActive ? 'Active in the engine' : 'Not in the active set'}
+            detail={
+              isActive
+                ? 'The engine will consider this strategy this session.'
+                : 'Switched off — it is never evaluated, whatever else is green below.'
+            }
+          />
+
+          <Check ok warn={mode !== 'standard'} label={`Execution route · ${route.label}`} detail={route.detail} />
+
+          {depAll.length > 0 && (
+            <Check
+              ok={depBad.length === 0}
+              warn={depBad.length > 0 && depBad.length < depAll.length}
+              label={
+                depBad.length === 0
+                  ? `All ${depAll.length} data inputs ready`
+                  : `${depBad.length} of ${depAll.length} data inputs not ready`
+              }
+              detail={
+                depBad.length === 0
+                  ? depAll.map(([k]) => k).join(' · ')
+                  : depBad.map(([k, v]) => `${k}: ${v}`).join(' · ')
+              }
+            />
+          )}
+
+          {of &&
+            (of.err ? (
+              <Check ok={false} label="Order-flow recorder" detail={`Status unavailable — ${of.err}`} />
+            ) : (
+              of.conns.map((c) => (
+                <Check
+                  key={c.label}
+                  ok={c.live}
+                  label={`Order-flow feed · ${c.label}`}
+                  detail={c.why}
+                />
+              ))
+            ))}
+
+          <Check
+            ok={mode === 'standard'}
+            warn={mode !== 'standard'}
+            label={mode === 'standard' ? 'Backtestable' : 'Not backtestable on the bar engine'}
+            detail={
+              mode === 'standard'
+                ? 'Runs on the per-bar backtest engine from the Backtest tab.'
+                : mode === 'live_only'
+                ? 'Depends on live 20-depth order flow, which no bar series can reconstruct. Validate it from recorded depth instead.'
+                : 'Multi-day option structure — the per-bar engine cannot model it.'
+            }
+          />
+        </div>
+      </Card>
+
+      {of && of.status?.live_status && <OrderFlowReading name={st.name} status={of.status} />}
+
+      <Card>
+        <SectionHeader
+          title="Configuration"
+          sub={`${params.length} parameters · ${tuned.size} exposed to the optimiser`}
+        />
+        {params.length === 0 ? (
+          <Empty>This strategy takes no parameters.</Empty>
+        ) : (
+          <div className="overflow-x-auto -mx-cardpad">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Parameter</th>
+                  <th className="text-right">Default</th>
+                  <th className="text-right">Optimiser</th>
+                </tr>
+              </thead>
+              <tbody>
+                {params.map(([k, v]) => (
+                  <tr key={k}>
+                    <td className="text-ink whitespace-nowrap">{k}</td>
+                    <td className="text-right text-ink font-medium">{String(v)}</td>
+                    <td className="text-right">
+                      {tuned.has(k) ? (
+                        <span className={`chip ${A.chip}`}>tuned</span>
+                      ) : (
+                        <span className="num text-f10 text-muted">fixed</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="num text-f10 text-muted mt-3">
+          Defaults are read from the strategy registry. Change them in the strategy module or sweep
+          the tuned ones from the Backtest tab.
+        </p>
+      </Card>
+    </div>
+  );
+}
+
+/* The live reading, for strategies that have one. Only rendered once the
+   external script has actually published a status for today. */
+function OrderFlowReading({ name, status }) {
+  const live = status.live_status || {};
+  const record = status.record;
+
+  const why = () => {
+    if (record?.position) return `Position open (${record.position.direction}).`;
+    if (record?.skipped) return `Day skipped: ${record.skip_reason || 'no reason recorded'}.`;
+    if (name === 'breadth') {
+      const min = live.min_stocks_reporting ?? 20;
+      if ((live.n_stocks_reporting ?? 0) < min) {
+        return `Only ${live.n_stocks_reporting ?? 0} of 100 stocks reporting — needs ${min} before it evaluates.`;
+      }
+      return `Mean breadth ${live.mean_breadth?.toFixed?.(4) ?? live.mean_breadth} — no crossing past ±${live.theta_cross} yet.`;
+    }
+    if (!live.in_signal_window) return 'Outside the signal window — not evaluating right now.';
+    if (!live.trace) return 'Waiting for the first evaluation cycle.';
+    if (!live.trace.trigger) return `No qualifying crossing yet in the ${live.trace.regime} regime.`;
+    return 'Trigger met — awaiting entry conditions.';
+  };
+
+  return (
+    <Card>
+      <SectionHeader title="Live reading" sub="published by the external order-flow script" />
+      {name === 'breadth' && (
+        <div className="grid grid-cols-3 gap-2">
+          <StatTile label="Mean breadth" value={live.mean_breadth?.toFixed?.(4) ?? '—'} accent="cyan" />
+          <StatTile label="Reporting" value={`${live.n_stocks_reporting ?? '—'}/100`} accent="violet" />
+          <StatTile label="Threshold" value={`±${live.theta_cross ?? '—'}`} accent="teal" />
+        </div>
+      )}
+      <div className="mt-3 pt-3 border-t border-line">
+        <Eyebrow>Why it {record?.position ? 'fired' : "hasn't fired"}</Eyebrow>
+        <p className="text-sec text-ink-2 mt-1.5 leading-relaxed">{why()}</p>
+      </div>
+    </Card>
+  );
+}
+
+/* The Trade tab.
+ *
+ * It used to render the signal queue and the whole strategy catalog side by
+ * side: execution posture appeared twice (once per column), every strategy
+ * dumped all twelve of its default params as a wall of chips, and both
+ * order-flow panels rendered permanently whether or not their strategy was
+ * even switched on. Deciding on a signal and configuring a strategy are
+ * different jobs, so they are now different views, and the catalog is a list
+ * plus one detail panel rather than four expanded cards at once. */
+export function Trade({ s, onApprove, onReject, busy, onRefresh }) {
   const algo = s?.algo || {};
+  const [view, setView] = useState('signals');
   const [strategies, setStrategies] = useState([]);
   const [activeStrats, setActiveStrats] = useState(algo.active_strategies || []);
   const [autoExec, setAutoExec] = useState(Boolean(algo.auto_execute));
+  const [selected, setSelected] = useState(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
+  const [err, setErr] = useState('');
 
   useEffect(() => {
-    api.getStrategies().then((data) => {
-      if (data?.strategies) {
-        setStrategies(data.strategies);
-        if (data.active_strategies) setActiveStrats(data.active_strategies);
-        if (data.auto_execute != null) setAutoExec(Boolean(data.auto_execute));
-      }
-    }).catch(() => {});
+    api.getStrategies()
+      .then((d) => {
+        if (!d?.strategies) return;
+        setStrategies(d.strategies);
+        if (d.active_strategies) setActiveStrats(d.active_strategies);
+        if (d.auto_execute != null) setAutoExec(Boolean(d.auto_execute));
+        setSelected((cur) => cur || d.active_strategies?.[0] || d.strategies[0]?.name || null);
+      })
+      .catch((e) => setErr(e.message));
   }, [algo.active_strategies, algo.auto_execute]);
 
-  const onSave = async (newStrats, newAuto) => {
+  const save = async (nextStrats, nextAuto) => {
     setSaving(true);
+    setErr('');
     try {
-      await api.setActiveStrategy({
-        strategies: newStrats,
-        auto_execute: newAuto,
-      });
-      setActiveStrats(newStrats);
-      setAutoExec(newAuto);
-      setToast(`Active algorithms updated!`);
-      setTimeout(() => setToast(''), 3000);
-      if (onRefresh) onRefresh();
+      await api.setActiveStrategy({ strategies: nextStrats, auto_execute: nextAuto });
+      setActiveStrats(nextStrats);
+      setAutoExec(nextAuto);
+      setToast('Saved');
+      setTimeout(() => setToast(''), 2500);
+      onRefresh?.();
     } catch (e) {
-      alert(e.message);
+      setErr(e.message);
     } finally {
       setSaving(false);
     }
   };
 
-  const toggleStrategy = (stratName) => {
-    const newStrats = activeStrats.includes(stratName)
-      ? activeStrats.filter(n => n !== stratName)
-      : [...activeStrats, stratName];
-    onSave(newStrats, autoExec);
-  };
+  const toggle = (name) =>
+    save(
+      activeStrats.includes(name) ? activeStrats.filter((n) => n !== name) : [...activeStrats, name],
+      autoExec,
+    );
+
+  /* Auto-pilot only ever reaches strategies on the standard tick loop: the app
+     skips anything with a non-standard EXECUTION_MODE before it gets near the
+     auto-approve branch. With only live_only and weekly_multiday strategies
+     active the switch is inert, which is worth saying rather than leaving it
+     to look armed. */
+  const autoEligible = strategies.filter(
+    (st) => activeStrats.includes(st.name) && (st.execution_mode || 'standard') === 'standard',
+  );
+  const active = s?.active_suggestions || [];
+  const detail = strategies.find((st) => st.name === selected);
 
   return (
     <div className="space-y-cardgap">
       {toast && <Banner tone="green">{toast}</Banner>}
+      {err && <Banner tone="red">{err}</Banner>}
 
-      <SectionHeader
-        title="Algo strategies"
-        sub={`${activeStrats.length} active · ${strategies.length} registered`}
-        right={
-          <span className={`chip font-semibold ${autoExec ? '!bg-ai-soft !text-ai !border-ai/40' : ''}`}>
-            {autoExec ? 'AUTO-PILOT' : 'ASSISTED'}
-          </span>
-        }
-      />
-
-      {/* Active Strategy & Operational Mode Card */}
-      <Card tone={autoExec ? 'ai' : ''}>
-        <Eyebrow>Active execution posture</Eyebrow>
-
-        <div className="font-disp text-contract font-semibold text-ink mt-2 leading-snug">
-          {activeStrats.length > 0
-            ? activeStrats.map(strat => strategies.find((x) => x.name === strat)?.display_name || strat.replace(/_/g, ' ').toUpperCase()).join(' · ')
-            : 'NONE ACTIVE'}
-        </div>
-        <p className="text-sec text-ink-2 mt-2 leading-relaxed">
-          {autoExec
-            ? 'Signals meeting institutional criteria execute automatically through the Risk Engine FSM, straight to the broker.'
-            : 'Signals require 1-tap manual review in the Signals tab before orders reach the broker.'}
-        </p>
-
-        <div className="mt-4 pt-3 border-t border-line">
-          <Eyebrow className="mb-2">Switch execution mode</Eyebrow>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={saving}
-              className={`rounded-block py-2.5 px-3 text-sec font-semibold border transition-all disabled:opacity-50 ${
-                !autoExec
-                  ? 'bg-ink text-paper border-ink'
-                  : 'bg-card-2 text-ink-2 border-line hover:text-ink hover:border-line-strong'
-              }`}
-              onClick={() => onSave(activeStrats, false)}
-            >
-              ✋ Assisted
-            </button>
-            <button
-              type="button"
-              disabled={saving}
-              className={`rounded-block py-2.5 px-3 text-sec font-semibold border transition-all disabled:opacity-50 ${
-                autoExec
-                  ? 'bg-ai text-white border-ai'
-                  : 'bg-card-2 text-ink-2 border-line hover:text-ink hover:border-ai/50'
-              }`}
-              onClick={() => onSave(activeStrats, true)}
-            >
-              ⚡ Auto-Pilot
-            </button>
-          </div>
-        </div>
-      </Card>
-
-      <Eyebrow className="!mt-1">Strategy catalog</Eyebrow>
-
-      {/* Strategy Cards — each carries its own accent so the catalog reads as
-          distinct entities rather than one undifferentiated stack. */}
-      <div className="space-y-3">
-        {strategies.map((st) => {
-          const isActive = activeStrats.includes(st.name);
-          const accent = STRATEGY_ACCENT[st.name] || 'ai';
-          const A = ACCENT_CLASSES[accent];
-          return (
-            <Card
-              key={st.name}
-              hover
-              className={`relative overflow-hidden ${isActive ? A.border : 'border-line'}`}
-            >
-              {/* accent spine */}
-              <div className={`absolute left-0 inset-y-0 w-[3px] ${isActive ? A.bg : 'bg-line'}`} />
-
-              <div className="flex items-start justify-between gap-2 pl-1.5">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${A.bg} ${isActive ? 'live-ring' : 'opacity-40'}`} />
-                    <span className="font-disp font-semibold text-body text-ink">
-                      {st.display_name || st.name.replace(/_/g, ' ').toUpperCase()}
-                    </span>
-                    <span className="chip">v{st.version || '1.0'}</span>
-                    {st.execution_mode && st.execution_mode !== 'standard' && (
-                      <span className={`chip ${A.chip}`}>{st.execution_mode.replace(/_/g, ' ')}</span>
-                    )}
-                  </div>
-                  <div className="num text-eyebrow text-muted mt-1.5">
-                    {(st.instrument_focus || ['NIFTY', 'SENSEX']).join(' · ')}
-                  </div>
-                </div>
-                {isActive ? (
-                  <button
-                    className="chip !bg-green-soft !text-green !border-green/40 font-semibold cursor-pointer shrink-0"
-                    disabled={saving}
-                    onClick={() => toggleStrategy(st.name)}
-                  >
-                    ✓ ACTIVE
-                  </button>
-                ) : (
-                  <button
-                    className="btn-ghost !w-auto !py-1.5 px-3 text-sec shrink-0"
-                    disabled={saving}
-                    onClick={() => toggleStrategy(st.name)}
-                  >
-                    Activate
-                  </button>
-                )}
-              </div>
-
-              <p className="text-sec text-ink-2 mt-2.5 leading-relaxed">{st.description}</p>
-
-              {st.default_params && (
-                <div className="mt-3 pt-2.5 border-t border-line/60 flex flex-wrap gap-1.5 text-f11 num text-muted">
-                  {Object.entries(st.default_params).map(([k, v]) => (
-                    <span key={k} className="px-2 py-0.5 rounded-pill bg-line-soft text-ink-2">
-                      {k}: <b>{String(v)}</b>
-                    </span>
-                  ))}
-                </div>
+      {/* One posture bar, not one per column. */}
+      <Card tone={autoExec && autoEligible.length > 0 ? 'ai' : ''}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <Eyebrow>Execution posture</Eyebrow>
+            <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+              {activeStrats.length === 0 ? (
+                <span className="font-disp text-f15 font-semibold text-amber">
+                  Nothing active — no strategy can fire
+                </span>
+              ) : (
+                activeStrats.map((n) => (
+                  <span key={n} className={`chip font-semibold ${ACCENT_CLASSES[STRATEGY_ACCENT[n] || 'ai'].chip}`}>
+                    {n.replace(/_/g, ' ')}
+                  </span>
+                ))
               )}
-            </Card>
-          );
-        })}
-      </div>
-
-      <ThunderboltOrderFlowCard active={activeStrats.includes('thunderbolt')} />
-      <BreadthOrderFlowCard active={activeStrats.includes('breadth')} />
-    </div>
-  );
-}
-
-/* Reads {recorder_health, live_status, record} every 5s and explains, in
-   plain terms, why Thunderbolt has or hasn't fired -- the per-poll-cycle
-   decision trace the backend now persists, not just the final outcome. */
-function ThunderboltOrderFlowCard({ active }) {
-  const [status, setStatus] = useState(null);
-  const [err, setErr] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    const poll = () => {
-      api.getThunderboltStatus()
-        .then((d) => { if (!cancelled) { setStatus(d); setErr(''); } })
-        .catch((e) => { if (!cancelled) setErr(e.message); });
-    };
-    poll();
-    const id = setInterval(poll, 5000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, []);
-
-  if (err) {
-    return (
-      <Card className="border border-line">
-        <Eyebrow>Order Flow — Nifty Thunderbolt</Eyebrow>
-        <p className="text-sec text-red mt-2">Could not load order-flow status: {err}</p>
-      </Card>
-    );
-  }
-  if (!status) {
-    return (
-      <Card className="border border-line">
-        <Eyebrow>Order Flow — Nifty Thunderbolt</Eyebrow>
-        <div className="mt-3 space-y-2">
-          <Skeleton h={12} w="60%" />
-          <Skeleton h={12} w="45%" />
-        </div>
-      </Card>
-    );
-  }
-
-  const { recorder_health: health, live_status: live, record } = status;
-  const trace = live?.trace;
-
-  const recencySeconds = health?.last_update_at
-    ? Math.round((Date.now() - new Date(health.last_update_at).getTime()) / 1000)
-    : null;
-  const feedLive = health?.connected || (recencySeconds !== null && recencySeconds < 15);
-
-  const filterReasons = trace ? [
-    trace.opposite_gate_skip && 'Opposite-side flow too strong — gated out',
-    trace.pre_open_lock_skip && 'Pre-open extreme locked out this direction',
-    trace.liquidity_reversal_flip && 'Early one-way liquidity reversed — direction flipped',
-    trace.medium_regime_flip && 'MEDIUM regime fade detected — direction flipped',
-    trace.over_stretch_skip && 'Reading already over-stretched — vetoed as a crescendo, not a start',
-    trace.reversal_flip && 'Opposite extreme dominated the crossing — flipped as exhaustion',
-  ].filter(Boolean) : [];
-
-  const verdictReason = () => {
-    if (record?.position) return `Position open (${record.position.direction}).`;
-    if (record?.skipped) return `Day skipped: ${record.skip_reason || 'no reason recorded'}.`;
-    if (!live) return 'No live status yet today — the recorder/paper-trader script may not be running.';
-    if (!live.in_signal_window) return 'Outside today\'s signal window — not evaluating right now.';
-    if (!trace) return 'Waiting for the first evaluation cycle.';
-    if (filterReasons.length) return filterReasons.join(' · ');
-    if (!trace.trigger) return `No qualifying crossing/breakout yet in the ${trace.regime} regime.`;
-    return `${trace.final} — trigger confirmed, no filter blocked it.`;
-  };
-
-  return (
-    <Card hover tone={active ? 'violet' : ''} className={active ? 'border-violet/50' : ''}>
-      <div className="flex items-center justify-between">
-        <Eyebrow>Order Flow — Nifty Thunderbolt</Eyebrow>
-        <span className={`chip text-f11 font-semibold ${feedLive ? 'bg-green-soft text-green border-green' : 'bg-red-soft text-red border-red'}`}>
-          {feedLive ? '● Feed live' : '○ Feed down'}
-        </span>
-      </div>
-      {!active && (
-        <p className="text-f11 text-muted mt-1">Not in your active strategies list — shown for visibility only.</p>
-      )}
-
-      <div className="grid grid-cols-2 gap-2 mt-3 text-f11 num">
-        <div className="px-2.5 py-2 rounded-block bg-line-soft">
-          <div className="text-muted">Last tick</div>
-          <div className="text-ink font-semibold">{recencySeconds === null ? '—' : `${recencySeconds}s ago`}</div>
-        </div>
-        <div className="px-2.5 py-2 rounded-block bg-line-soft">
-          <div className="text-muted">Reconnects today</div>
-          <div className="text-ink font-semibold">{health?.reconnect_count ?? '—'}</div>
-        </div>
-        <div className="px-2.5 py-2 rounded-block bg-line-soft">
-          <div className="text-muted">Prior-session VIX</div>
-          <div className="text-ink font-semibold">
-            {live?.prior_session_vix ?? '—'}
-            {live?.vix_skip_at_or_above != null && (
-              <span className="text-muted font-normal"> / skip ≥ {live.vix_skip_at_or_above}</span>
-            )}
-          </div>
-        </div>
-        <div className="px-2.5 py-2 rounded-block bg-line-soft">
-          <div className="text-muted">Regime</div>
-          <div className="text-ink font-semibold">
-            {trace?.regime ?? '—'}
-            {live?.recent_realized_vols?.length > 0 && (
-              <span className="text-muted font-normal"> (avg {(
-                live.recent_realized_vols.reduce((a, b) => a + b, 0) / live.recent_realized_vols.length
-              ).toFixed(2)})</span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-3 pt-3 border-t border-line/60">
-        <div className="text-eyebrow num text-muted mb-1">Latest imbalance reading</div>
-        <div className="font-disp text-lg font-bold text-ink">
-          {live?.latest_imbalance_reading ?? '—'}
-        </div>
-      </div>
-
-      <div className="mt-3 pt-3 border-t border-line/60">
-        <div className="text-eyebrow num text-muted mb-1">Why it {record?.position ? 'fired' : 'hasn\'t fired'}</div>
-        <p className="text-sec text-ink leading-relaxed">{verdictReason()}</p>
-        {trace?.trigger && (
-          <p className="text-f11 text-muted mt-1 num">
-            Trigger: {trace.trigger.direction} via {trace.trigger.source} at {trace.trigger.value}
-          </p>
-        )}
-      </div>
-    </Card>
-  );
-}
-
-/* Reads {recorder_health, live_status, record} every 5s for the
-   cross-sectional breadth signal -- same pattern as ThunderboltOrderFlowCard,
-   adapted for breadth's multi-connection health (3 recorders: 2 equity
-   batches + 1 option-chain batch) and its own live_status shape. */
-function BreadthOrderFlowCard({ active }) {
-  const [status, setStatus] = useState(null);
-  const [err, setErr] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    const poll = () => {
-      api.getBreadthStatus()
-        .then((d) => { if (!cancelled) { setStatus(d); setErr(''); } })
-        .catch((e) => { if (!cancelled) setErr(e.message); });
-    };
-    poll();
-    const id = setInterval(poll, 5000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, []);
-
-  if (err) {
-    return (
-      <Card className="border border-line">
-        <Eyebrow>Order Flow — Breadth (NIFTY100)</Eyebrow>
-        <p className="text-sec text-red mt-2">Could not load order-flow status: {err}</p>
-      </Card>
-    );
-  }
-  if (!status) {
-    return (
-      <Card className="border border-line">
-        <Eyebrow>Order Flow — Breadth (NIFTY100)</Eyebrow>
-        <div className="mt-3 space-y-2">
-          <Skeleton h={12} w="60%" />
-          <Skeleton h={12} w="45%" />
-        </div>
-      </Card>
-    );
-  }
-
-  const { recorder_health: health, live_status: live, record } = status;
-  const connections = ['equities_conn0', 'equities_conn1', 'options_conn0'];
-  const now = Date.now();
-  const connStatuses = connections.map((label) => {
-    const h = health?.[label];
-    const recencySeconds = h?.last_update_at ? Math.round((now - new Date(h.last_update_at).getTime()) / 1000) : null;
-    const live_ = h?.connected || (recencySeconds !== null && recencySeconds < 15);
-    return { label, live: live_, recencySeconds, nInstruments: h?.n_instruments };
-  });
-  const allLive = connStatuses.every((c) => c.live);
-
-  const verdictReason = () => {
-    if (record?.position) return `Position open (${record.position.direction}).`;
-    if (record?.skipped) return `Day skipped: ${record.skip_reason || 'no reason recorded'}.`;
-    if (!live) return 'No live status yet today — the recorder/paper-trader script may not be running.';
-    if (live.n_stocks_reporting < (live.min_stocks_reporting ?? 20)) {
-      return `Only ${live.n_stocks_reporting} stocks reporting so far — waiting for enough coverage before evaluating.`;
-    }
-    return `Mean breadth ${live.mean_breadth?.toFixed?.(3) ?? live.mean_breadth} — no qualifying crossing past ±${live.theta_cross} yet.`;
-  };
-
-  return (
-    <Card hover tone={active ? 'cyan' : ''} className={active ? 'border-cyan/50' : ''}>
-      <div className="flex items-center justify-between">
-        <Eyebrow>Order Flow — Breadth (NIFTY100)</Eyebrow>
-        <span className={`chip text-f11 font-semibold ${allLive ? 'bg-green-soft text-green border-green' : 'bg-red-soft text-red border-red'}`}>
-          {allLive ? '● All feeds live' : '○ Feed(s) down'}
-        </span>
-      </div>
-      {!active && (
-        <p className="text-f11 text-muted mt-1">Not in your active strategies list — shown for visibility only.</p>
-      )}
-
-      <div className="grid grid-cols-3 gap-2 mt-3 text-f11 num">
-        {connStatuses.map((c) => (
-          <div key={c.label} className="px-2 py-2 rounded-block bg-line-soft">
-            <div className="text-muted truncate">{c.label.replace('_conn', ' #')}</div>
-            <div className={`font-semibold ${c.live ? 'text-green' : 'text-red'}`}>
-              {c.recencySeconds === null ? 'no data' : `${c.recencySeconds}s ago`}
             </div>
-            <div className="text-muted">{c.nInstruments ?? '—'} instr.</div>
           </div>
+          <div className="flex gap-2 shrink-0">
+            <button
+              disabled={saving}
+              onClick={() => save(activeStrats, false)}
+              className={`rounded-block py-2 px-4 text-sec font-semibold border transition-all disabled:opacity-50 ${
+                !autoExec ? 'bg-ink text-paper border-ink' : 'bg-card-2 text-ink-2 border-line hover:text-ink'
+              }`}
+            >
+              Assisted
+            </button>
+            <button
+              disabled={saving || autoEligible.length === 0}
+              onClick={() => save(activeStrats, true)}
+              title={
+                autoEligible.length === 0
+                  ? 'No active strategy runs on the tick loop, so auto-pilot would never fire'
+                  : ''
+              }
+              className={`rounded-block py-2 px-4 text-sec font-semibold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                autoExec && autoEligible.length > 0
+                  ? 'bg-ai text-white border-ai'
+                  : 'bg-card-2 text-ink-2 border-line hover:text-ink'
+              }`}
+            >
+              Auto-pilot
+            </button>
+          </div>
+        </div>
+
+        <p className="text-sec text-muted mt-3 pt-3 border-t border-line leading-relaxed">
+          {autoEligible.length === 0 ? (
+            <>
+              Auto-pilot is unavailable. It auto-approves from the in-process tick loop, and every
+              active strategy runs on its own route instead — the loop skips them before the
+              auto-approve branch is reached, so the switch could not fire an order even when on.
+            </>
+          ) : autoExec ? (
+            <>
+              Signals from {autoEligible.map((x) => x.name.replace(/_/g, ' ')).join(', ')} execute
+              straight through the risk FSM to the broker, with no tap.
+            </>
+          ) : (
+            <>Every signal waits for a tap. Nothing reaches the broker on its own.</>
+          )}
+        </p>
+      </Card>
+
+      <div className="well p-1 inline-flex gap-1">
+        {[
+          { id: 'signals', label: active.length ? `Signals · ${active.length}` : 'Signals' },
+          { id: 'strategies', label: 'Strategies' },
+        ].map((v) => (
+          <button
+            key={v.id}
+            onClick={() => setView(v.id)}
+            className={`font-disp text-btn font-medium px-4 py-1.5 rounded-[7px] transition-colors ${
+              view === v.id ? 'bg-card-2 text-ink shadow-card' : 'text-muted hover:text-ink-2'
+            }`}
+          >
+            {v.label}
+          </button>
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 mt-2 text-f11 num">
-        <div className="px-2.5 py-2 rounded-block bg-line-soft">
-          <div className="text-muted">Stocks reporting</div>
-          <div className="text-ink font-semibold">{live?.n_stocks_reporting ?? '—'} / 100</div>
-        </div>
-        <div className="px-2.5 py-2 rounded-block bg-line-soft">
-          <div className="text-muted">Crossing threshold</div>
-          <div className="text-ink font-semibold">±{live?.theta_cross ?? '—'}</div>
-        </div>
-      </div>
+      {view === 'signals' ? (
+        <Signals s={s} onApprove={onApprove} onReject={onReject} busy={busy} />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)] gap-cardgap items-start">
+          <div className="space-y-1.5 lg:sticky lg:top-[104px]">
+            {strategies.map((st) => {
+              const on = activeStrats.includes(st.name);
+              const A = ACCENT_CLASSES[STRATEGY_ACCENT[st.name] || 'ai'];
+              const sel = selected === st.name;
+              return (
+                <button
+                  key={st.name}
+                  onClick={() => setSelected(st.name)}
+                  className={`w-full text-left rounded-block border px-3 py-2.5 transition-colors ${
+                    sel ? 'bg-card-2 border-line-strong' : 'bg-transparent border-line hover:bg-card-2/60'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${on ? `${A.bg} live-ring` : 'bg-line-strong'}`}
+                    />
+                    <span className={`eyebrow truncate ${sel ? A.text : ''}`}>
+                      {st.name.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  <div className="num text-f10 text-muted mt-1 truncate">
+                    {on ? 'active' : 'off'} · {ROUTE[st.execution_mode || 'standard'].label.toLowerCase()}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
 
-      <div className="mt-3 pt-3 border-t border-line/60">
-        <div className="text-eyebrow num text-muted mb-1">Mean breadth reading</div>
-        <div className="font-disp text-lg font-bold text-ink">
-          {live?.mean_breadth != null ? live.mean_breadth.toFixed(4) : '—'}
+          {detail ? (
+            <StrategyDetail
+              st={detail}
+              isActive={activeStrats.includes(detail.name)}
+              saving={saving}
+              onToggle={toggle}
+            />
+          ) : (
+            <SkeletonCard rows={4} />
+          )}
         </div>
-      </div>
-
-      <div className="mt-3 pt-3 border-t border-line/60">
-        <div className="text-eyebrow num text-muted mb-1">Why it {record?.position ? 'fired' : 'hasn\'t fired'}</div>
-        <p className="text-sec text-ink leading-relaxed">{verdictReason()}</p>
-      </div>
-    </Card>
+      )}
+    </div>
   );
 }
 

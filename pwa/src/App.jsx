@@ -8,8 +8,8 @@ import { Banner, StateChip, num, pnlColor, useFlash } from './components.jsx';
 import AmbientField from './ambient.jsx';
 import { useTheme } from './theme.js';
 import {
-  Locked, Positions, Signals, System, Today,
-  Strategies, Backtest, DataScreen, Reports
+  Locked, Positions, System, Today,
+  Trade, Backtest, DataScreen, Reports
 } from './screens.jsx';
 
 /* One destination per job-to-be-done. `Paper` used to re-render the whole of
@@ -440,14 +440,16 @@ export default function App() {
                 </div>
 
                 <div className={tab === 'trade' ? 'block animate-in fade-in slide-in-from-bottom-1 duration-200' : 'hidden'}>
-                  <div className="grid grid-cols-1 xl:grid-cols-5 gap-3 items-start">
-                    <div className="xl:col-span-2 space-y-cardgap min-w-0 xl:sticky xl:top-[104px]">
-                      <Signals s={state} onApprove={onApprove} onReject={onReject} busy={busy} />
-                    </div>
-                    <div className="xl:col-span-3 space-y-cardgap min-w-0">
-                      <Strategies s={state} onRefresh={refresh} />
-                    </div>
-                  </div>
+                  {/* Trade owns its own internal split now: deciding on a
+                      signal and configuring a strategy are separate jobs, and
+                      side by side they duplicated the posture card. */}
+                  <Trade
+                    s={state}
+                    onApprove={onApprove}
+                    onReject={onReject}
+                    busy={busy}
+                    onRefresh={refresh}
+                  />
                 </div>
 
                 <div className={tab === 'backtest' ? 'block animate-in fade-in slide-in-from-bottom-1 duration-200' : 'hidden'}>
