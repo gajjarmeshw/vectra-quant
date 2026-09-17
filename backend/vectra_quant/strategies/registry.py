@@ -5,9 +5,13 @@ from typing import Any
 
 from vectra_quant.strategies.base import BaseStrategy
 from vectra_quant.strategies.renko_strategy import DynamicRenkoStrategy
+from vectra_quant.strategies.thunderbolt_strategy import ThunderboltStrategy
+from vectra_quant.strategies.weekly_credit_spread_strategy import WeeklyCreditSpreadStrategy
 
 _STRATEGIES: dict[str, type[BaseStrategy]] = {
     DynamicRenkoStrategy.name: DynamicRenkoStrategy,
+    WeeklyCreditSpreadStrategy.name: WeeklyCreditSpreadStrategy,
+    ThunderboltStrategy.name: ThunderboltStrategy,
 }
 
 
@@ -32,6 +36,8 @@ def list_strategies() -> list[dict[str, Any]]:
         "option_wall_squeeze": "Trapped Option Wall Squeeze",
         "wall_mean_reversion": "Defended Range Mean Reversion",
         "renko_strategy": "Renko Trend Sniper (ATR + EMA21/44 + Trailing SL)",
+        "weekly_credit_spread": "Weekly Credit Spread (PCR-Directed, Multi-Day)",
+        "thunderbolt": "Nifty Thunderbolt (1x2 Backspread, Live Order-Flow)",
     }
     for name, cls in _STRATEGIES.items():
         result.append({
@@ -43,5 +49,6 @@ def list_strategies() -> list[dict[str, Any]]:
             "default_params": cls.default_params,
             "wiggle_params": [k for k, v in cls.default_params.items() if isinstance(v, (int, float))],
             "manifest": getattr(cls, "manifest", {"symbols": [], "timeframes": [], "indicators": []}),
+            "execution_mode": getattr(cls, "EXECUTION_MODE", "standard"),
         })
     return result
