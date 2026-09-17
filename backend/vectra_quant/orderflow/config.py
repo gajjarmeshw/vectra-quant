@@ -120,3 +120,36 @@ class ThunderboltCfg:
 
 
 DEFAULT_THUNDERBOLT_CFG = ThunderboltCfg()
+
+
+@dataclass(frozen=True)
+class BreadthCfg:
+    """Cross-sectional order-flow breadth (100 NIFTY100 stocks -> one
+    market-wide reading). This is our own signal, not from any disclosure
+    -- every number here is a starting guess, not a calibrated value.
+    Structure is deliberately the simplest possible (single-leg long
+    option), unlike Thunderbolt's disclosed 1x2 backspread, because there
+    is no prescribed structure to match and a low-confidence new signal
+    should carry the least structural risk while it's being evaluated.
+    """
+    # --- schedule ---
+    signal_window_start: time = time(9, 20)
+    signal_window_end: time = time(15, 0)
+    force_exit_time: time = time(15, 10)
+
+    # --- breadth aggregation ---
+    bucket_seconds: int = 15
+    bullish_stock_threshold: float = 0.1   # a stock counts as "bullish" at/above this per-stock imbalance
+    bearish_stock_threshold: float = -0.1
+    theta_cross: float = 0.10              # mean-breadth crossing threshold -- GUESS, needs calibration
+    min_stocks_reporting: int = 20         # don't trust breadth from a thin, mostly-silent snapshot
+
+    # --- structure ---
+    strike_step: float = 50.0
+    lots: int = 1
+    stop_loss_pct_premium: float = 0.30    # exit if premium drops this fraction from entry
+    target_pct_premium: float = 0.50       # exit if premium rises this fraction from entry
+    max_hold_minutes: int = 15
+
+
+DEFAULT_BREADTH_CFG = BreadthCfg()

@@ -130,10 +130,13 @@ algo:
   # renko_strategy excluded: no validated live edge after the honest backtest
   # redesign. weekly_credit_spread has execution_mode=weekly_multiday (backtest
   # + reporting only -- no live day-orchestration executor built yet, so it
-  # never places a live order even though it's listed here). thunderbolt has
-  # execution_mode=live_only and actually runs via its own dedicated process
-  # (scripts/run_thunderbolt_live.py), not through this per-tick dispatch loop.
-  active_strategies: ["thunderbolt", "weekly_credit_spread"]
+  # never places a live order even though it's listed here). thunderbolt is
+  # dormant: its single-NIFTY-future recorder was superseded by breadth's
+  # multi-instrument one (operator decision, 2026-09-17) -- code and tests
+  # stay in the repo, but nothing feeds it live data anymore. breadth has
+  # execution_mode=live_only and runs via its own dedicated process
+  # (scripts/run_breadth_live.py), not through this per-tick dispatch loop.
+  active_strategies: ["breadth", "weekly_credit_spread"]
   auto_execute: false          # false = PWA approval card; true = direct broker execution
 
 broker: dhan                   # dhan | groww

@@ -772,6 +772,36 @@ def get_thunderbolt_status() -> dict[str, Any]:
     }
 
 
+@router.get("/orderflow/breadth/status", dependencies=[Depends(require_secret)])
+def get_breadth_status() -> dict[str, Any]:
+    """Live cross-sectional breadth status for today -- the multi-instrument
+    counterpart to /orderflow/thunderbolt/status. Reads three connection
+    health files (two equity batches + one option-chain batch, per
+    scripts/run_breadth_live.py's topology) plus the breadth paper trader's
+    live_status.json and record.json. Nulls for anything not written yet.
+    """
+    root = os.environ.get("ORDERFLOW_RECORDS_ROOT", "./data/orderflow")
+    today = session_date()
+
+    def _read_json(path: str) -> dict[str, Any] | None:
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    return {
+        "ok": True,
+        "session_date": today,
+        "recorder_health": {
+            label: _read_json(os.path.join(root, "recorder_health", f"health_{label}.json"))
+            for label in ("equities_conn0", "equities_conn1", "options_conn0")
+        },
+        "live_status": _read_json(os.path.join(root, "breadth", f"date={today}", "live_status.json")),
+        "record": _read_json(os.path.join(root, "breadth", f"date={today}", "record.json")),
+    }
+
+
 MAX_BACKTEST_DAYS = 250
 
 

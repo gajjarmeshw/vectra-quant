@@ -50,6 +50,7 @@ export const setPreset = (preset) =>
 
 export const getStrategies = () => req('/strategies');
 export const getThunderboltStatus = () => req('/orderflow/thunderbolt/status');
+export const getBreadthStatus = () => req('/orderflow/breadth/status');
 
 /* Job-based backtest: submit returns a job_id immediately (202) — the sim runs
    on a background worker thread, never on the request. Progress streams over

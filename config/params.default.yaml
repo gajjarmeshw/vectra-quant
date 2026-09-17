@@ -127,7 +127,7 @@ push:
 
 algo:
   enabled: true
-  active_strategies: ["thunderbolt", "weekly_credit_spread"]
+  active_strategies: ["breadth", "weekly_credit_spread"]
   auto_execute: false          # false = PWA approval card; true = direct broker execution
 
 broker: dhan                   # dhan | groww

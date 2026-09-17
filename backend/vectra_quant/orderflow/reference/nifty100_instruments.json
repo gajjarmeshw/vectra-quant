@@ -1,0 +1,502 @@
+[
+  {
+    "symbol": "ABB",
+    "security_id": "13",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "ADANIENSOL",
+    "security_id": "10217",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "ADANIENT",
+    "security_id": "25",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "ADANIGREEN",
+    "security_id": "3563",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "ADANIPORTS",
+    "security_id": "15083",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "ADANIPOWER",
+    "security_id": "17388",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "AMBUJACEM",
+    "security_id": "1270",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "APOLLOHOSP",
+    "security_id": "157",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "ASIANPAINT",
+    "security_id": "236",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "AXISBANK",
+    "security_id": "5900",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "BAJAJ-AUTO",
+    "security_id": "16669",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "BAJAJFINSV",
+    "security_id": "16675",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "BAJAJHLDNG",
+    "security_id": "305",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "BAJFINANCE",
+    "security_id": "317",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "BANKBARODA",
+    "security_id": "4668",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "BEL",
+    "security_id": "383",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "BHARTIARTL",
+    "security_id": "10604",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "BOSCHLTD",
+    "security_id": "2181",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "BPCL",
+    "security_id": "526",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "BRITANNIA",
+    "security_id": "547",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "CANBK",
+    "security_id": "10794",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "CGPOWER",
+    "security_id": "760",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "CHOLAFIN",
+    "security_id": "685",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "CIPLA",
+    "security_id": "694",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "COALINDIA",
+    "security_id": "20374",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "CUMMINSIND",
+    "security_id": "1901",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "DIVISLAB",
+    "security_id": "10940",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "DLF",
+    "security_id": "14732",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "DMART",
+    "security_id": "19913",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "DRREDDY",
+    "security_id": "881",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "EICHERMOT",
+    "security_id": "910",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "ENRIN",
+    "security_id": "756871",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "ETERNAL",
+    "security_id": "5097",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "GAIL",
+    "security_id": "4717",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "GODREJCP",
+    "security_id": "10099",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "GRASIM",
+    "security_id": "1232",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "HAL",
+    "security_id": "2303",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "HCLTECH",
+    "security_id": "7229",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "HDFCAMC",
+    "security_id": "4244",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "HDFCBANK",
+    "security_id": "1333",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "HDFCLIFE",
+    "security_id": "467",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "HINDALCO",
+    "security_id": "1363",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "HINDUNILVR",
+    "security_id": "1394",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "HINDZINC",
+    "security_id": "1424",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "HYUNDAI",
+    "security_id": "25844",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "ICICIBANK",
+    "security_id": "4963",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "INDHOTEL",
+    "security_id": "1512",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "INDIGO",
+    "security_id": "11195",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "INFY",
+    "security_id": "1594",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "IOC",
+    "security_id": "1624",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "IRFC",
+    "security_id": "2029",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "ITC",
+    "security_id": "1660",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "JINDALSTEL",
+    "security_id": "6733",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "JIOFIN",
+    "security_id": "18143",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "JSWSTEEL",
+    "security_id": "11723",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "KOTAKBANK",
+    "security_id": "1922",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "LODHA",
+    "security_id": "3220",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "LT",
+    "security_id": "11483",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "LTM",
+    "security_id": "17818",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "M&M",
+    "security_id": "2031",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "MARUTI",
+    "security_id": "10999",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "MAXHEALTH",
+    "security_id": "22377",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "MAZDOCK",
+    "security_id": "509",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "MOTHERSON",
+    "security_id": "4204",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "MUTHOOTFIN",
+    "security_id": "23650",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "NESTLEIND",
+    "security_id": "17963",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "NTPC",
+    "security_id": "11630",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "ONGC",
+    "security_id": "2475",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "PFC",
+    "security_id": "14299",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "PIDILITIND",
+    "security_id": "2664",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "PNB",
+    "security_id": "10666",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "POWERGRID",
+    "security_id": "14977",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "RECLTD",
+    "security_id": "15355",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "RELIANCE",
+    "security_id": "2885",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "SBILIFE",
+    "security_id": "21808",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "SBIN",
+    "security_id": "3045",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "SHREECEM",
+    "security_id": "3103",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "SHRIRAMFIN",
+    "security_id": "4306",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "SIEMENS",
+    "security_id": "3150",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "SOLARINDS",
+    "security_id": "13332",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "SUNPHARMA",
+    "security_id": "3351",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "TATACAP",
+    "security_id": "759265",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "TATACONSUM",
+    "security_id": "3432",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "TATAPOWER",
+    "security_id": "3426",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "TATASTEEL",
+    "security_id": "3499",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "TCS",
+    "security_id": "11536",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "TECHM",
+    "security_id": "13538",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "TITAN",
+    "security_id": "3506",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "TMCV",
+    "security_id": "759782",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "TMPV",
+    "security_id": "3456",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "TORNTPHARM",
+    "security_id": "3518",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "TRENT",
+    "security_id": "1964",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "TVSMOTOR",
+    "security_id": "8479",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "ULTRACEMCO",
+    "security_id": "11532",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "UNIONBANK",
+    "security_id": "10753",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "UNITDSPR",
+    "security_id": "10447",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "VBL",
+    "security_id": "18921",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "VEDL",
+    "security_id": "3063",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "WIPRO",
+    "security_id": "3787",
+    "exchange_segment": "NSE_EQ"
+  },
+  {
+    "symbol": "ZYDUSLIFE",
+    "security_id": "7929",
+    "exchange_segment": "NSE_EQ"
+  }
+]

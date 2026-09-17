@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from vectra_quant.brokers.base import Instrument
+from vectra_quant.brokers.base import Instrument, InstrumentMaster
 
 
 class NoFutureContractFound(RuntimeError):
@@ -60,3 +60,30 @@ def resolve_current_nifty_future(
 
 def needs_rollover(current: ResolvedContract, today: date) -> bool:
     return today > current.is_rollover_needed_by
+
+
+def resolve_nifty_option_window(
+    master: InstrumentMaster, spot: float, on_or_after: str,
+    n_strikes_each_side: int = 10, strike_step: float = 50.0,
+) -> list[Instrument]:
+    """CE+PE instruments for the nearest-listed NIFTY expiry on/after
+    `on_or_after`, for the `2*n_strikes_each_side + 1` strikes nearest the
+    given spot (matches the ~21-strike window Arjun's own capture used).
+    Returns only strikes that are actually listed -- a thin/newly-listed
+    contract may not have every step populated yet.
+    """
+    expiry = master.nearest_expiry("NIFTY", on_or_after=on_or_after)
+    if expiry is None:
+        return []
+    listed_strikes = set(master.strikes("NIFTY", expiry))
+    if not listed_strikes:
+        return []
+    atm = round(spot / strike_step) * strike_step
+    wanted = {atm + i * strike_step for i in range(-n_strikes_each_side, n_strikes_each_side + 1)}
+    out: list[Instrument] = []
+    for strike in sorted(wanted & listed_strikes):
+        for side in ("CE", "PE"):
+            inst = master.find_option("NIFTY", expiry, strike, side)
+            if inst is not None:
+                out.append(inst)
+    return out

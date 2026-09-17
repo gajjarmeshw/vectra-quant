@@ -737,6 +737,7 @@ export function Strategies({ s, onRefresh }) {
       </div>
 
       <ThunderboltOrderFlowCard active={activeStrats.includes('thunderbolt')} />
+      <BreadthOrderFlowCard active={activeStrats.includes('breadth')} />
     </div>
   );
 }
@@ -863,6 +864,114 @@ function ThunderboltOrderFlowCard({ active }) {
             Trigger: {trace.trigger.direction} via {trace.trigger.source} at {trace.trigger.value}
           </p>
         )}
+      </div>
+    </Card>
+  );
+}
+
+/* Reads {recorder_health, live_status, record} every 5s for the
+   cross-sectional breadth signal -- same pattern as ThunderboltOrderFlowCard,
+   adapted for breadth's multi-connection health (3 recorders: 2 equity
+   batches + 1 option-chain batch) and its own live_status shape. */
+function BreadthOrderFlowCard({ active }) {
+  const [status, setStatus] = useState(null);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => {
+      api.getBreadthStatus()
+        .then((d) => { if (!cancelled) { setStatus(d); setErr(''); } })
+        .catch((e) => { if (!cancelled) setErr(e.message); });
+    };
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  if (err) {
+    return (
+      <Card className="border border-line">
+        <Eyebrow>Order Flow — Breadth (NIFTY100)</Eyebrow>
+        <p className="text-sec text-red mt-2">Could not load order-flow status: {err}</p>
+      </Card>
+    );
+  }
+  if (!status) {
+    return (
+      <Card className="border border-line">
+        <Eyebrow>Order Flow — Breadth (NIFTY100)</Eyebrow>
+        <p className="text-sec text-ink-2 mt-2">Loading…</p>
+      </Card>
+    );
+  }
+
+  const { recorder_health: health, live_status: live, record } = status;
+  const connections = ['equities_conn0', 'equities_conn1', 'options_conn0'];
+  const now = Date.now();
+  const connStatuses = connections.map((label) => {
+    const h = health?.[label];
+    const recencySeconds = h?.last_update_at ? Math.round((now - new Date(h.last_update_at).getTime()) / 1000) : null;
+    const live_ = h?.connected || (recencySeconds !== null && recencySeconds < 15);
+    return { label, live: live_, recencySeconds, nInstruments: h?.n_instruments };
+  });
+  const allLive = connStatuses.every((c) => c.live);
+
+  const verdictReason = () => {
+    if (record?.position) return `Position open (${record.position.direction}).`;
+    if (record?.skipped) return `Day skipped: ${record.skip_reason || 'no reason recorded'}.`;
+    if (!live) return 'No live status yet today — the recorder/paper-trader script may not be running.';
+    if (live.n_stocks_reporting < (live.min_stocks_reporting ?? 20)) {
+      return `Only ${live.n_stocks_reporting} stocks reporting so far — waiting for enough coverage before evaluating.`;
+    }
+    return `Mean breadth ${live.mean_breadth?.toFixed?.(3) ?? live.mean_breadth} — no qualifying crossing past ±${live.theta_cross} yet.`;
+  };
+
+  return (
+    <Card className={`border ${active ? 'border-ai ring-1 ring-ai/30' : 'border-line'}`}>
+      <div className="flex items-center justify-between">
+        <Eyebrow>Order Flow — Breadth (NIFTY100)</Eyebrow>
+        <span className={`chip text-[11px] font-semibold ${allLive ? 'bg-green-soft text-green border-green' : 'bg-red-soft text-red border-red'}`}>
+          {allLive ? '● All feeds live' : '○ Feed(s) down'}
+        </span>
+      </div>
+      {!active && (
+        <p className="text-[11px] text-muted mt-1">Not in your active strategies list — shown for visibility only.</p>
+      )}
+
+      <div className="grid grid-cols-3 gap-2 mt-3 text-[11px] num">
+        {connStatuses.map((c) => (
+          <div key={c.label} className="px-2 py-2 rounded-block bg-line-soft">
+            <div className="text-muted truncate">{c.label.replace('_conn', ' #')}</div>
+            <div className={`font-semibold ${c.live ? 'text-green' : 'text-red'}`}>
+              {c.recencySeconds === null ? 'no data' : `${c.recencySeconds}s ago`}
+            </div>
+            <div className="text-muted">{c.nInstruments ?? '—'} instr.</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 mt-2 text-[11px] num">
+        <div className="px-2.5 py-2 rounded-block bg-line-soft">
+          <div className="text-muted">Stocks reporting</div>
+          <div className="text-ink font-semibold">{live?.n_stocks_reporting ?? '—'} / 100</div>
+        </div>
+        <div className="px-2.5 py-2 rounded-block bg-line-soft">
+          <div className="text-muted">Crossing threshold</div>
+          <div className="text-ink font-semibold">±{live?.theta_cross ?? '—'}</div>
+        </div>
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-line/60">
+        <div className="text-eyebrow num text-muted mb-1">Mean breadth reading</div>
+        <div className="font-disp text-lg font-bold text-ink">
+          {live?.mean_breadth != null ? live.mean_breadth.toFixed(4) : '—'}
+        </div>
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-line/60">
+        <div className="text-eyebrow num text-muted mb-1">Why it {record?.position ? 'fired' : 'hasn\'t fired'}</div>
+        <p className="text-sec text-ink leading-relaxed">{verdictReason()}</p>
       </div>
     </Card>
   );

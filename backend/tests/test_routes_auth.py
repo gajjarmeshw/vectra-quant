@@ -201,3 +201,53 @@ def test_thunderbolt_status_reads_real_files(tmp_path, monkeypatch):
     assert body["live_status"]["trace"]["final"] == "SKIP"
     assert body["record"]["skipped"] is False
     assert body["context"] is None  # not written in this test
+
+
+# --------------------------------------------------------------- /orderflow/breadth/status
+
+def test_breadth_status_requires_secret():
+    client = TestClient(_make_app(api_shared_secret="a-real-secret-value"))
+    r = client.get("/orderflow/breadth/status")
+    assert r.status_code == 401
+
+
+def test_breadth_status_returns_nulls_when_files_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("ORDERFLOW_RECORDS_ROOT", str(tmp_path / "nonexistent"))
+    client = TestClient(_make_app(api_shared_secret=""))
+    r = client.get("/orderflow/breadth/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["recorder_health"] == {"equities_conn0": None, "equities_conn1": None, "options_conn0": None}
+    assert body["live_status"] is None
+    assert body["record"] is None
+
+
+def test_breadth_status_reads_real_files(tmp_path, monkeypatch):
+    from datetime import date
+    import json as _json
+
+    root = tmp_path / "orderflow"
+    monkeypatch.setenv("ORDERFLOW_RECORDS_ROOT", str(root))
+    today = date.today().isoformat()
+
+    health_dir = root / "recorder_health"
+    health_dir.mkdir(parents=True)
+    (health_dir / "health_equities_conn0.json").write_text(_json.dumps({"connected": True, "n_instruments": 50}))
+    (health_dir / "health_equities_conn1.json").write_text(_json.dumps({"connected": True, "n_instruments": 50}))
+    # options_conn0 health file intentionally not written -- must come back null, not error
+
+    b_dir = root / "breadth" / f"date={today}"
+    b_dir.mkdir(parents=True)
+    (b_dir / "live_status.json").write_text(_json.dumps({"mean_breadth": 0.03, "n_stocks_reporting": 87}))
+    (b_dir / "record.json").write_text(_json.dumps({"skipped": False}))
+
+    client = TestClient(_make_app(api_shared_secret=""))
+    r = client.get("/orderflow/breadth/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["recorder_health"]["equities_conn0"]["n_instruments"] == 50
+    assert body["recorder_health"]["equities_conn1"]["n_instruments"] == 50
+    assert body["recorder_health"]["options_conn0"] is None
+    assert body["live_status"]["n_stocks_reporting"] == 87
+    assert body["record"]["skipped"] is False

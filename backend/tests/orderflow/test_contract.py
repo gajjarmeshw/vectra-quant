@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
-from vectra_quant.brokers.base import Instrument
+from vectra_quant.brokers.base import Instrument, InstrumentMaster
 from vectra_quant.orderflow.contract import (
     NoFutureContractFound,
     needs_rollover,
     resolve_current_nifty_future,
+    resolve_nifty_option_window,
 )
 
 
@@ -61,3 +62,42 @@ def test_needs_rollover_true_after_roll_by_date():
     resolved = resolve_current_nifty_future(instruments, today=date(2026, 9, 1), roll_days_before_expiry=1)
     assert needs_rollover(resolved, date(2026, 9, 30)) is True
     assert needs_rollover(resolved, date(2026, 9, 28)) is False
+
+
+def make_option(strike: float, side: str, expiry: str = "2026-09-22") -> Instrument:
+    return Instrument(
+        trading_symbol=f"NIFTY-{expiry}-{int(strike)}-{side}", exchange="NSE", segment="NSE_FNO",
+        lot_size=65, instrument_type=side, name="NIFTY", expiry=expiry, strike=strike,
+    )
+
+
+def make_option_master(strikes: list[float], expiry: str = "2026-09-22") -> InstrumentMaster:
+    instruments = [make_option(k, side, expiry) for k in strikes for side in ("CE", "PE")]
+    return InstrumentMaster(instruments, fetched_at=datetime(2026, 9, 17))
+
+
+def test_resolve_nifty_option_window_returns_ce_and_pe_around_spot():
+    strikes = [22800 + i * 50 for i in range(22)]  # 22800..23850
+    master = make_option_master(strikes)
+    out = resolve_nifty_option_window(master, spot=23280, on_or_after="2026-09-17", n_strikes_each_side=2, strike_step=50.0)
+    symbols = sorted(i.trading_symbol for i in out)
+    # ATM rounds 23280 -> 23300; window is 23200,23250,23300,23350,23400 (5 strikes x CE/PE = 10)
+    assert len(symbols) == 10
+    assert any("23300" in s and s.endswith("CE") for s in symbols)
+    assert any("23300" in s and s.endswith("PE") for s in symbols)
+
+
+def test_resolve_nifty_option_window_skips_unlisted_strikes():
+    strikes = [23200, 23300, 23400]  # 23250/23350 not listed
+    master = make_option_master(strikes)
+    out = resolve_nifty_option_window(master, spot=23280, on_or_after="2026-09-17", n_strikes_each_side=1, strike_step=50.0)
+    symbols = sorted(i.trading_symbol for i in out)
+    # wanted window (ATM 23300 +/- 1 step) = {23250, 23300, 23350}; only 23300 is listed
+    assert len(symbols) == 2
+    assert all("23300" in s for s in symbols)
+
+
+def test_resolve_nifty_option_window_empty_when_no_expiry():
+    master = InstrumentMaster([], fetched_at=None)
+    out = resolve_nifty_option_window(master, spot=23280, on_or_after="2026-09-17")
+    assert out == []

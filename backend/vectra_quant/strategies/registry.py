@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from vectra_quant.strategies.base import BaseStrategy
+from vectra_quant.strategies.breadth_strategy import BreadthStrategy
 from vectra_quant.strategies.renko_strategy import DynamicRenkoStrategy
 from vectra_quant.strategies.thunderbolt_strategy import ThunderboltStrategy
 from vectra_quant.strategies.weekly_credit_spread_strategy import WeeklyCreditSpreadStrategy
@@ -12,6 +13,7 @@ _STRATEGIES: dict[str, type[BaseStrategy]] = {
     DynamicRenkoStrategy.name: DynamicRenkoStrategy,
     WeeklyCreditSpreadStrategy.name: WeeklyCreditSpreadStrategy,
     ThunderboltStrategy.name: ThunderboltStrategy,
+    BreadthStrategy.name: BreadthStrategy,
 }
 
 
@@ -38,6 +40,7 @@ def list_strategies() -> list[dict[str, Any]]:
         "renko_strategy": "Renko Trend Sniper (ATR + EMA21/44 + Trailing SL)",
         "weekly_credit_spread": "Weekly Credit Spread (PCR-Directed, Multi-Day)",
         "thunderbolt": "Nifty Thunderbolt (1x2 Backspread, Live Order-Flow)",
+        "breadth": "Cross-Sectional Order-Flow Breadth (NIFTY100, Live)",
     }
     for name, cls in _STRATEGIES.items():
         result.append({
