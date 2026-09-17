@@ -102,10 +102,13 @@ def test_event_loop_not_blocked_during_run(client):
 
 def test_concurrent_submit_returns_409(client):
     # No wiggle here — this test only needs job1 to still be RUNNING when job2
-    # is submitted; a plain full-year run already takes long enough for that.
+    # is submitted a fraction of a second later; ~2 months is comfortably
+    # long enough for that margin without paying for a full year's worth of
+    # bars (cancel_check is polled per-session regardless of range, so a
+    # smaller range doesn't weaken what this test is actually checking).
     r1 = client.post("/backtest/runs", json={
         "strategy": "renko_strategy", "instrument": "NIFTY",
-        "from_date": "2025-01-01", "to_date": "2025-12-31", "wiggle_test": False,
+        "from_date": "2025-01-01", "to_date": "2025-02-28", "wiggle_test": False,
     })
     assert r1.status_code == 202
     job1 = r1.json()["job_id"]
@@ -117,13 +120,18 @@ def test_concurrent_submit_returns_409(client):
     assert r2.status_code == 409
 
     client.post(f"/backtest/runs/{job1}/cancel")
-    _wait_for_terminal(client, job1, timeout_s=90.0)
+    _wait_for_terminal(client, job1, timeout_s=30.0)
 
 
 def test_cancel_stops_a_running_job(client):
+    # cancel_check is polled once per session, so cancellation speed doesn't
+    # depend on the total date range -- a much smaller range (with wiggle
+    # still on, to prove cancellation works across sub-runs too) exercises
+    # the identical cancel path in a fraction of the wall-clock time a
+    # multi-year + wiggle sweep previously took.
     r = client.post("/backtest/runs", json={
         "strategy": "renko_strategy", "instrument": "NIFTY",
-        "from_date": "2023-01-01", "to_date": "2026-08-31", "wiggle_test": True,
+        "from_date": "2026-06-01", "to_date": "2026-06-30", "wiggle_test": True,
     })
     assert r.status_code == 202
     job_id = r.json()["job_id"]

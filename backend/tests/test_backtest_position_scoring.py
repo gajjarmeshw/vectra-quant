@@ -29,19 +29,29 @@ def _group_by_position(trades):
     return groups
 
 
-def test_total_trades_counts_positions_not_legs():
+@pytest.fixture(scope="module")
+def backtest_result():
+    """All four tests below assert different things about the identical
+    same backtest run -- share one real (non-mocked) run across them instead
+    of recomputing it four times over, which is what this file did before
+    and was, by a wide margin, the single slowest part of the whole suite.
+    2 months is already comfortably past what these assertions need (45
+    multi-leg positions observed here vs. ~100 over the original 8.5-month
+    window) -- there's no assertion in this file that benefits from a
+    larger sample, only wall-clock cost."""
     strat = get_strategy("renko_strategy")
-    res = BacktestEngine().run_strategy(strategy=strat, instrument="NIFTY", from_date="2026-01-01", to_date="2026-09-15")
+    return BacktestEngine().run_strategy(strategy=strat, instrument="NIFTY", from_date="2026-01-01", to_date="2026-02-28")
 
+
+def test_total_trades_counts_positions_not_legs(backtest_result):
+    res = backtest_result
     groups = _group_by_position(res.trades)
     assert len(res.trades) > len(groups), "fixture should actually exercise multi-leg spreads"
     assert res.total_trades == len(groups)
 
 
-def test_win_pct_and_profit_factor_match_manual_position_grouping():
-    strat = get_strategy("renko_strategy")
-    res = BacktestEngine().run_strategy(strategy=strat, instrument="NIFTY", from_date="2026-01-01", to_date="2026-09-15")
-
+def test_win_pct_and_profit_factor_match_manual_position_grouping(backtest_result):
+    res = backtest_result
     groups = _group_by_position(res.trades)
     position_nets = [sum(t.net_pnl for t in legs) for legs in groups.values()]
 
@@ -55,19 +65,14 @@ def test_win_pct_and_profit_factor_match_manual_position_grouping():
     assert res.profit_factor == pytest.approx(expected_pf, rel=1e-6)
 
 
-def test_every_leg_of_a_position_shares_one_position_id():
-    strat = get_strategy("renko_strategy")
-    res = BacktestEngine().run_strategy(strategy=strat, instrument="NIFTY", from_date="2026-01-01", to_date="2026-09-15")
-
-    assert all(t.position_id for t in res.trades), "every leg must carry a position_id"
+def test_every_leg_of_a_position_shares_one_position_id(backtest_result):
+    assert all(t.position_id for t in backtest_result.trades), "every leg must carry a position_id"
 
 
-def test_position_margin_is_not_double_counted_across_legs():
+def test_position_margin_is_not_double_counted_across_legs(backtest_result):
     """Margin is one number per position (the spread's defined-risk margin),
     logged on the first leg only — summing legs must not multiply it."""
-    strat = get_strategy("renko_strategy")
-    res = BacktestEngine().run_strategy(strategy=strat, instrument="NIFTY", from_date="2026-01-01", to_date="2026-09-15")
-
+    res = backtest_result
     groups = _group_by_position(res.trades)
     multi_leg = [legs for legs in groups.values() if len(legs) > 1]
     assert multi_leg, "fixture should include at least one multi-leg position"

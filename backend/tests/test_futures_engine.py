@@ -96,10 +96,14 @@ def test_multiday_mode_does_not_permanently_lock_after_first_trade():
     RiskEngine was conflated with "don't force-close the position". The
     first loss permanently LOCKed the engine, so a full year produced
     exactly 1 trade. Must now reset day-state every session regardless."""
+    # 6 months (not the full year the original bug report used) still
+    # produces ~19 trades with this config -- comfortably enough to show
+    # sustained trading rather than a burst, at roughly a quarter of the
+    # wall-clock cost of a full year.
     strat = get_strategy("renko_strategy", {"box_min": 75.0, "box_atr_mult": 0.0})
     res = FuturesBacktestEngine().run_strategy(
-        strategy=strat, instrument="NIFTY", from_date="2025-01-01", to_date="2025-12-31", allow_multiday=True)
-    assert res.total_trades > 5, "multi-day mode must keep taking trades across the whole year, not stall after one"
+        strategy=strat, instrument="NIFTY", from_date="2025-01-01", to_date="2025-06-30", allow_multiday=True)
+    assert res.total_trades > 5, "multi-day mode must keep taking trades across the whole window, not stall after one"
 
 
 def test_futures_engine_lot_size_scales_with_risk_per_trade():
