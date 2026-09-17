@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -10,7 +11,10 @@ from vectra_quant.logging_setup import get
 
 log = get("reports.premarket")
 
-GROQ_MODEL = "llama-3.3-70b-versatile"
+# Groq retires model ids without warning -- `llama-3.3-70b-versatile`, which
+# this module shipped with, now 404s. Overridable so a decommission is a config
+# change rather than a code change; the 404 is logged loudly either way.
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 # A full build hits an RSS feed, five Yahoo endpoints and a Groq completion.
 # The PWA mounts the card on every Home render, so without a cache a tab switch
@@ -207,6 +211,9 @@ def build_premarket_report(st: Any) -> dict[str, Any]:
                 usdinr=cues.get("usdinr"),
                 fii_dii_net_cr=cues.get("fii_dii_net_cr"),
                 news_headlines=headlines,
+                # Without this the model writes a confident directional read
+                # off a hardcoded 24750.
+                stale_inputs=stale_inputs,
             )
             with httpx.Client(timeout=5) as client:
                 r = client.post(

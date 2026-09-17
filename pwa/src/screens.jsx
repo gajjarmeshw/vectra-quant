@@ -2752,7 +2752,7 @@ function PremarketCard() {
             className={`chip ${byModel ? '!bg-violet-soft !text-violet !border-violet/40' : '!text-muted'}`}
             title={pm.generated_at ? `generated ${pm.generated_at}` : ''}
           >
-            {byModel ? pm.engine.split(':')[1].split('-')[0].toUpperCase() : 'RULE-BASED'}
+            {byModel ? pm.engine.replace('groq:', '').split('/').pop().toUpperCase() : 'RULE-BASED'}
           </span>
           <span className="num text-muted text-sec">{open ? '▲' : '▼'}</span>
         </div>
