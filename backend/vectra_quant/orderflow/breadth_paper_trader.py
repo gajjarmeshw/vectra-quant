@@ -102,13 +102,17 @@ class BreadthPaperTrader:
         rec = self._load_or_init_today(session_date)
         return rec.skipped or rec.position is not None
 
-    def _current_breadth_reading(self) -> tuple[float, int]:
+    def _current_breadth_reading(self) -> tuple[float, int, float]:
+        """Returns (z_score, n_stocks, mean_imbalance).
+
+        The z-score is what the trigger thresholds; the raw mean is carried
+        alongside purely so the live status panel can still show it."""
         merged: dict[str, tuple[float, float]] = {}
         for provider in self._top_of_book_providers:
             merged.update(provider())
         imbalances = {sym: per_stock_imbalance(bid, ask) for sym, (bid, ask) in merged.items()}
         reading = compute_breadth(imbalances, self.cfg.bullish_stock_threshold, self.cfg.bearish_stock_threshold)
-        return reading.mean_imbalance, reading.n_stocks
+        return reading.z_score, reading.n_stocks, reading.mean_imbalance
 
     def _enter_position(self, direction: SignalDirection, now: datetime) -> BreadthPaperPosition:
         spot = self._spot_fn()
@@ -122,15 +126,21 @@ class BreadthPaperTrader:
             entry_premium=premium, status="OPEN",
         )
 
-    def _write_live_status(self, session_date: date, now: datetime, breadth: float, n_stocks: int, day_skip_reason: str) -> None:
+    def _write_live_status(
+        self, session_date: date, now: datetime, breadth_z: float, n_stocks: int,
+        day_skip_reason: str, mean_imb: float = 0.0,
+    ) -> None:
         payload = {
             "updated_at": now.isoformat(),
             "session_date": session_date.isoformat(),
             "day_skip_reason": day_skip_reason,
-            "mean_breadth": breadth,
+            # The z-score is what the trigger compares against; the raw mean is
+            # kept because it is the more intuitive number to eyeball.
+            "breadth_z": breadth_z,
+            "mean_breadth": mean_imb,
             "n_stocks_reporting": n_stocks,
             "min_stocks_reporting": self.cfg.min_stocks_reporting,
-            "theta_cross": self.cfg.theta_cross,
+            "theta_z": self.cfg.theta_z,
             "breadth_series_tail": [{"ts": t.isoformat(), "value": v} for t, v in self._breadth_series[-30:]],
         }
         self._live_status_path(session_date).write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
@@ -150,16 +160,16 @@ class BreadthPaperTrader:
             if now.time() >= self.cfg.force_exit_time:
                 break
 
-            breadth, n_stocks = self._current_breadth_reading()
+            breadth_z, n_stocks, mean_imb = self._current_breadth_reading()
             in_window = self.cfg.signal_window_start <= now.time() <= self.cfg.signal_window_end
             enough_data = n_stocks >= self.cfg.min_stocks_reporting
 
             if in_window and enough_data:
-                self._breadth_series.append((now, breadth))
+                self._breadth_series.append((now, breadth_z))
                 ever_evaluated = True
 
             if position is None and in_window and enough_data:
-                trigger = detect_breadth_crossing(self._breadth_series, theta_cross=self.cfg.theta_cross)
+                trigger = detect_breadth_crossing(self._breadth_series, theta_cross=self.cfg.theta_z)
                 if trigger is not None and trigger.direction != SignalDirection.SKIP:
                     try:
                         position = self._enter_position(trigger.direction, now)
@@ -175,7 +185,7 @@ class BreadthPaperTrader:
                         rec.skip_reason = f"COULD_NOT_PRICE_ENTRY: {exc}"
                         rec.decision = {"trigger_ts": trigger.ts.isoformat(), "direction": trigger.direction.value, "value": trigger.value}
                         self._save(rec)
-                        self._write_live_status(session_date, now, breadth, n_stocks, "")
+                        self._write_live_status(session_date, now, breadth_z, n_stocks, "", mean_imb)
                         return rec
 
             elif position is not None and position.status == "OPEN":
@@ -188,7 +198,7 @@ class BreadthPaperTrader:
                     self._save(rec)
                     log.info("Breadth: closed position (%s), net_pnl=%s", reason, position.net_pnl)
 
-            self._write_live_status(session_date, now, breadth, n_stocks, "")
+            self._write_live_status(session_date, now, breadth_z, n_stocks, "", mean_imb)
             await asyncio.sleep(poll_seconds)
 
         if position is not None and position.status == "OPEN":

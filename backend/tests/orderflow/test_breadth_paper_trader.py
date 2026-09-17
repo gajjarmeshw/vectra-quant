@@ -51,7 +51,7 @@ async def test_run_session_enters_on_strong_breadth(tmp_path):
     cfg = BreadthCfg(
         signal_window_start=time(0, 0), signal_window_end=time(23, 59),
         force_exit_time=(now_ist() + timedelta(seconds=2)).time(),
-        theta_cross=0.1, min_stocks_reporting=10, bucket_seconds=0.05,
+        theta_z=2.0, min_stocks_reporting=10, bucket_seconds=0.05,
     )
     trader = BreadthPaperTrader(
         top_of_book_providers=[TransitioningBookProvider()], quote_fn=fake_quote,
@@ -71,7 +71,7 @@ async def test_run_session_no_signal_when_flat(tmp_path):
     cfg = BreadthCfg(
         signal_window_start=time(0, 0), signal_window_end=time(23, 59),
         force_exit_time=(now_ist() + timedelta(seconds=1)).time(),
-        theta_cross=0.1, min_stocks_reporting=10, bucket_seconds=0.05,
+        theta_z=2.0, min_stocks_reporting=10, bucket_seconds=0.05,
     )
     trader = BreadthPaperTrader(
         top_of_book_providers=[flat_book_provider], quote_fn=fake_quote,
@@ -92,7 +92,7 @@ async def test_run_session_started_after_hours_gets_distinct_skip_reason(tmp_pat
     cfg = BreadthCfg(
         signal_window_start=time(0, 0), signal_window_end=time(23, 59),
         force_exit_time=(now_ist() - timedelta(seconds=1)).time(),  # already in the past
-        theta_cross=0.1, min_stocks_reporting=10, bucket_seconds=0.05,
+        theta_z=2.0, min_stocks_reporting=10, bucket_seconds=0.05,
     )
     trader = BreadthPaperTrader(
         top_of_book_providers=[flat_book_provider], quote_fn=fake_quote,
@@ -124,7 +124,7 @@ async def test_live_status_written_every_cycle(tmp_path):
     cfg = BreadthCfg(
         signal_window_start=time(0, 0), signal_window_end=time(23, 59),
         force_exit_time=(now_ist() + timedelta(seconds=1)).time(),
-        theta_cross=0.1, min_stocks_reporting=10, bucket_seconds=0.05,
+        theta_z=2.0, min_stocks_reporting=10, bucket_seconds=0.05,
     )
     trader = BreadthPaperTrader([flat_book_provider], fake_quote, fake_resolver, fake_spot, cfg, str(tmp_path))
     await trader.run_session(session_date=date(2026, 9, 17), poll_seconds=0.05)

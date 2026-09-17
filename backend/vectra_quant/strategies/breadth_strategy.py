@@ -40,7 +40,7 @@ class BreadthStrategy(BaseStrategy):
         "bucket_seconds": 15,
         "bullish_stock_threshold": 0.1,
         "bearish_stock_threshold": -0.1,
-        "theta_cross": 0.10,
+        "theta_z": 2.0,
         "min_stocks_reporting": 20,
         "stop_loss_pct_premium": 0.30,
         "target_pct_premium": 0.50,

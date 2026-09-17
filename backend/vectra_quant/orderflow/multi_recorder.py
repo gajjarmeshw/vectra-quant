@@ -32,7 +32,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -117,9 +117,13 @@ class MultiInstrumentDepthRecorder:
         ]
         self.writer.add_many(rows)
 
-        if levels:
+        top_price, top_qty = (levels[0][0], levels[0][1]) if levels else (0.0, 0.0)
+        # A torn-down or not-yet-quoted book arrives as price 0 with a
+        # quantity attached. 6% of the rows in the one real multi-stock
+        # capture we have look like this, and because the breadth signal
+        # reads quantities only it would take them for a genuine lean.
+        if levels and top_price > 0:
             snap = self._top_of_book.setdefault(symbol, {"bid_qty": 0.0, "ask_qty": 0.0, "ts": now})
-            top_qty = levels[0][1]
             if side == "BID":
                 snap["bid_qty"] = top_qty
             else:
@@ -133,10 +137,24 @@ class MultiInstrumentDepthRecorder:
             self._ticks_since_health_write = 0
             self._write_health()
 
-    def top_of_book_snapshot(self) -> dict[str, tuple[float, float]]:
-        """Live (bid_qty, ask_qty) at level 0 for every instrument that has
-        sent at least one update so far -- what the breadth signal reads."""
-        return {sym: (v["bid_qty"], v["ask_qty"]) for sym, v in self._top_of_book.items()}
+    def top_of_book_snapshot(self, max_age_s: float = 30.0) -> dict[str, tuple[float, float]]:
+        """Live (bid_qty, ask_qty) at level 0 for every instrument quoting
+        *now* -- what the breadth signal reads.
+
+        Entries older than `max_age_s` are dropped. Without that this returned
+        the last value ever seen for a symbol, forever: a stock that stopped
+        quoting, or a whole websocket connection that died, kept contributing
+        its frozen imbalance to the cross-sectional mean and kept counting
+        toward `n_stocks`. Breadth would happily report "100 stocks reporting"
+        off a feed that had been dead for an hour, which is the same way the
+        recorder-health panel reported a twelve-hour-old file as live.
+        """
+        cutoff = now_ist() - timedelta(seconds=max_age_s)
+        return {
+            sym: (v["bid_qty"], v["ask_qty"])
+            for sym, v in self._top_of_book.items()
+            if v["ts"] >= cutoff
+        }
 
     async def run_forever(self) -> None:
         from dhanhq import FullDepth  # local import: optional dependency

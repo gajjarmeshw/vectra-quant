@@ -1169,7 +1169,7 @@ function OrderFlowReading({ name, status }) {
       if ((live.n_stocks_reporting ?? 0) < min) {
         return `Only ${live.n_stocks_reporting ?? 0} of 100 stocks reporting — needs ${min} before it evaluates.`;
       }
-      return `Mean breadth ${live.mean_breadth?.toFixed?.(4) ?? live.mean_breadth} — no crossing past ±${live.theta_cross} yet.`;
+      return `Breadth z ${live.breadth_z?.toFixed?.(2) ?? '—'} (mean ${live.mean_breadth?.toFixed?.(4) ?? '—'}) — no crossing past ±${live.theta_z} yet.`;
     }
     if (!live.in_signal_window) return 'Outside the signal window — not evaluating right now.';
     if (!live.trace) return 'Waiting for the first evaluation cycle.';
@@ -1182,9 +1182,14 @@ function OrderFlowReading({ name, status }) {
       <SectionHeader title="Live reading" sub="published by the external order-flow script" />
       {name === 'breadth' && (
         <div className="grid grid-cols-3 gap-2">
-          <StatTile label="Mean breadth" value={live.mean_breadth?.toFixed?.(4) ?? '—'} accent="cyan" />
+          <StatTile
+            label="Breadth z"
+            value={live.breadth_z?.toFixed?.(2) ?? '—'}
+            sub={`mean ${live.mean_breadth?.toFixed?.(4) ?? '—'}`}
+            accent="cyan"
+          />
           <StatTile label="Reporting" value={`${live.n_stocks_reporting ?? '—'}/100`} accent="violet" />
-          <StatTile label="Threshold" value={`±${live.theta_cross ?? '—'}`} accent="teal" />
+          <StatTile label="Threshold" value={`±${live.theta_z ?? '—'}σ`} accent="teal" />
         </div>
       )}
       <div className="mt-3 pt-3 border-t border-line">

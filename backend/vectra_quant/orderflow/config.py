@@ -141,8 +141,17 @@ class BreadthCfg:
     bucket_seconds: int = 15
     bullish_stock_threshold: float = 0.1   # a stock counts as "bullish" at/above this per-stock imbalance
     bearish_stock_threshold: float = -0.1
-    theta_cross: float = 0.10              # mean-breadth crossing threshold -- GUESS, needs calibration
-    min_stocks_reporting: int = 20         # don't trust breadth from a thin, mostly-silent snapshot
+    # Crossing threshold on the breadth Z-SCORE (mean / standard error), not on
+    # the raw mean. A raw cut-off is not comparable across coverage: on the one
+    # real 100-stock capture, |mean| >= 0.10 fired in 16.5% of buckets at 100
+    # stocks but 51.0% at 20, purely from the sqrt(n) shrink. Since coverage is
+    # thinnest at the open and the strategy takes the first crossing of the
+    # day, that biased it toward entering early on a thin sample.
+    # 2.0 is roughly where the old 0.10 sat at full coverage -- still a
+    # starting guess, but now one that means the same thing all session.
+    theta_z: float = 2.0
+    min_stocks_reporting: int = 40         # don't trust breadth from a thin, mostly-silent snapshot
+    max_quote_age_s: float = 30.0          # a stock silent longer than this stops counting as reporting
 
     # --- structure ---
     strike_step: float = 50.0

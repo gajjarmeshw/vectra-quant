@@ -135,7 +135,12 @@ async def main() -> None:
 
     lot_size = option_window[0].lot_size if option_window else 65
     trader = BreadthPaperTrader(
-        top_of_book_providers=[recorder_eq0.top_of_book_snapshot, recorder_eq1.top_of_book_snapshot],
+        # Bound by the config rather than the recorder default so the
+        # staleness window and `min_stocks_reporting` stay a single decision.
+        top_of_book_providers=[
+            lambda: recorder_eq0.top_of_book_snapshot(DEFAULT_BREADTH_CFG.max_quote_age_s),
+            lambda: recorder_eq1.top_of_book_snapshot(DEFAULT_BREADTH_CFG.max_quote_age_s),
+        ],
         quote_fn=quote_fn, instrument_resolver_fn=instrument_resolver, spot_fn=spot_fn,
         cfg=DEFAULT_BREADTH_CFG, records_root=RECORDS_ROOT, lot_size=lot_size,
     )

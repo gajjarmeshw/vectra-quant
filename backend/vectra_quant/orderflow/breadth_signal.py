@@ -16,6 +16,7 @@ shows structure worth pursuing with more data.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, time
 
@@ -29,6 +30,23 @@ class BreadthReading:
     pct_bullish: float      # fraction of stocks at/above bullish_threshold
     pct_bearish: float      # fraction of stocks at/below bearish_threshold
     n_stocks: int
+    stderr: float           # cross-sectional standard error of the mean
+    z_score: float          # mean / stderr -- the coverage-invariant reading
+
+
+# Below this many stocks a z-score is not meaningful either, so the reading is
+# reported as 0 rather than as a confident-looking large number off two names.
+_MIN_N_FOR_Z = 5
+
+# Floor on the cross-sectional sigma before it becomes a standard error.
+# Without it, unusually tight agreement across stocks divides by ~0 and
+# manufactures an enormous z from a tiny mean -- and perfect agreement (every
+# stock at the same imbalance) divides by exactly 0. Perfect agreement is the
+# strongest reading there is, not a null one, so the floor has to keep it
+# large rather than send it to zero. 0.15 is well below the dispersion
+# actually observed across NIFTY100 top-of-book imbalances, so it only binds
+# in the degenerate case it exists for.
+_MIN_SIGMA = 0.15
 
 
 def per_stock_imbalance(bid_top_qty: float, ask_top_qty: float) -> float:
@@ -44,21 +62,48 @@ def compute_breadth(
     bearish_threshold: float = -0.1,
 ) -> BreadthReading:
     """Aggregate one snapshot's per-stock imbalance readings into a single
-    market-wide breadth reading."""
+    market-wide breadth reading.
+
+    `z_score`, not `mean_imbalance`, is what the trigger should threshold.
+    Averaging n roughly-independent series shrinks the spread by ~sqrt(n), so a
+    fixed cut-off on the raw mean is a completely different event at different
+    coverage. Measured on the one real 100-stock capture we have, a fixed
+    |mean| >= 0.10 fires in 16.5% of buckets at 100 stocks and 51.0% at 20 -- a
+    3x swing driven purely by how many stocks happened to be quoting. Coverage
+    is thinnest early in the session and the strategy takes the *first*
+    crossing of the day, so that bias pointed straight at entering early on a
+    thin, noisy sample. Dividing by the standard error removes it.
+    """
     values = list(per_stock_imbalances.values())
     n = len(values)
     if n == 0:
-        return BreadthReading(mean_imbalance=0.0, pct_bullish=0.0, pct_bearish=0.0, n_stocks=0)
+        return BreadthReading(
+            mean_imbalance=0.0, pct_bullish=0.0, pct_bearish=0.0, n_stocks=0,
+            stderr=0.0, z_score=0.0,
+        )
     mean_imb = sum(values) / n
     bullish = sum(1 for v in values if v >= bullish_threshold) / n
     bearish = sum(1 for v in values if v <= bearish_threshold) / n
-    return BreadthReading(mean_imbalance=mean_imb, pct_bullish=bullish, pct_bearish=bearish, n_stocks=n)
+
+    if n < _MIN_N_FOR_Z:
+        stderr = 0.0
+        z = 0.0
+    else:
+        var = sum((v - mean_imb) ** 2 for v in values) / (n - 1)
+        sigma = max(math.sqrt(var), _MIN_SIGMA)
+        stderr = sigma / math.sqrt(n)
+        z = mean_imb / stderr
+
+    return BreadthReading(
+        mean_imbalance=mean_imb, pct_bullish=bullish, pct_bearish=bearish, n_stocks=n,
+        stderr=stderr, z_score=z,
+    )
 
 
 def detect_breadth_crossing(
     series: list[tuple[datetime, float]], theta_cross: float, after: time = time(0, 0),
 ) -> TriggerEvent | None:
-    """First transition of the mean-breadth series through +-theta_cross.
+    """First transition of the breadth z-score series through +-theta_cross.
     Thin wrapper: the crossing/reversal logic is instrument-agnostic, so
     this reuses Thunderbolt's own `detect_crossing` rather than
     duplicating it -- the two signal families differ in what series they
