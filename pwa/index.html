@@ -15,6 +15,26 @@
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <title>VECTRA_QUANT</title>
+    <script>
+      /* Resolve the theme before first paint. Running this in <head> is the
+         only way to avoid a dark-to-light flash on load, so it cannot live in
+         the React tree. Kept in sync with useTheme() in src/theme.js. */
+      (function () {
+        try {
+          var saved = localStorage.getItem('vq-theme');
+          var t =
+            saved === 'light' || saved === 'dark'
+              ? saved
+              : window.matchMedia('(prefers-color-scheme: light)').matches
+              ? 'light'
+              : 'dark';
+          document.documentElement.setAttribute('data-theme', t);
+          document.documentElement.style.colorScheme = t;
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

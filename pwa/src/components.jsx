@@ -236,15 +236,15 @@ export function Delta({ value, suffix = '', digits = 2 }) {
    categorical colour so a row of tiles reads as distinct at a glance. */
 export function StatTile({ label, value, sub, tone = '', accent = '', icon: Icon, className = '' }) {
   const a = {
-    green: { edge: 'border-l-green', glow: 'rgba(0,217,139,0.16)', ink: 'text-green' },
-    red: { edge: 'border-l-red', glow: 'rgba(255,77,94,0.16)', ink: 'text-red' },
-    ai: { edge: 'border-l-ai', glow: 'rgba(77,141,255,0.16)', ink: 'text-ai' },
-    violet: { edge: 'border-l-violet', glow: 'rgba(167,139,250,0.16)', ink: 'text-violet' },
-    cyan: { edge: 'border-l-cyan', glow: 'rgba(34,211,238,0.16)', ink: 'text-cyan' },
-    amber: { edge: 'border-l-amber', glow: 'rgba(255,176,32,0.16)', ink: 'text-amber' },
-    teal: { edge: 'border-l-teal', glow: 'rgba(45,212,191,0.16)', ink: 'text-teal' },
-    orange: { edge: 'border-l-orange', glow: 'rgba(251,146,60,0.16)', ink: 'text-orange' },
-    pink: { edge: 'border-l-pink', glow: 'rgba(244,114,182,0.16)', ink: 'text-pink' },
+    green: { edge: 'border-l-green', glow: 'rgb(var(--c-green) / 0.16)', ink: 'text-green' },
+    red: { edge: 'border-l-red', glow: 'rgb(var(--c-red) / 0.16)', ink: 'text-red' },
+    ai: { edge: 'border-l-ai', glow: 'rgb(var(--c-ai) / 0.16)', ink: 'text-ai' },
+    violet: { edge: 'border-l-violet', glow: 'rgb(var(--c-violet) / 0.16)', ink: 'text-violet' },
+    cyan: { edge: 'border-l-cyan', glow: 'rgb(var(--c-cyan) / 0.16)', ink: 'text-cyan' },
+    amber: { edge: 'border-l-amber', glow: 'rgb(var(--c-amber) / 0.16)', ink: 'text-amber' },
+    teal: { edge: 'border-l-teal', glow: 'rgb(var(--c-teal) / 0.16)', ink: 'text-teal' },
+    orange: { edge: 'border-l-orange', glow: 'rgb(var(--c-orange) / 0.16)', ink: 'text-orange' },
+    pink: { edge: 'border-l-pink', glow: 'rgb(var(--c-pink) / 0.16)', ink: 'text-pink' },
   }[accent];
   return (
     <div
@@ -287,7 +287,7 @@ export function DayRail({ dayPnl, floor, target, lossLimit }) {
           style={{
             width: `${lockPct}%`,
             backgroundImage:
-              'repeating-linear-gradient(45deg,rgba(255,77,94,0.14) 0 4px,rgba(255,77,94,0.26) 4px 8px)',
+              'repeating-linear-gradient(45deg, rgb(var(--c-red) / 0.14) 0 4px, rgb(var(--c-red) / 0.26) 4px 8px)',
           }}
         />
         <div className="absolute -top-1.5 w-[2px] h-5 rounded-sm bg-ink" style={{ left: `${floorPct}%` }} />
@@ -302,8 +302,8 @@ export function DayRail({ dayPnl, floor, target, lossLimit }) {
             top: '-4px',
             width: 16,
             height: 16,
-            background: dayPnl >= 0 ? '#00D98B' : '#FF4D5E',
-            boxShadow: dayPnl >= 0 ? '0 0 12px rgba(0,217,139,0.5)' : '0 0 12px rgba(255,77,94,0.5)',
+            background: dayPnl >= 0 ? 'rgb(var(--c-green))' : 'rgb(var(--c-red))',
+            boxShadow: dayPnl >= 0 ? '0 0 12px rgb(var(--c-green) / 0.5)' : '0 0 12px rgb(var(--c-red) / 0.5)',
           }}
         />
       </div>
@@ -335,7 +335,7 @@ export function SlTrack({ sl, target, ltp, entry }) {
         className="relative h-1.5 rounded-pill"
         style={{
           background:
-            'linear-gradient(90deg, rgba(255,77,94,0.35), rgba(255,255,255,0.06) 45%, rgba(0,217,139,0.35))',
+            'linear-gradient(90deg, rgb(var(--c-red) / 0.35), rgb(var(--c-ink) / 0.08) 45%, rgb(var(--c-green) / 0.35))',
         }}
       >
         <span className="absolute -top-[5px] w-0.5 h-4 rounded-sm bg-red" style={{ left: '0%' }} />
@@ -368,8 +368,8 @@ export function TradeDots({ taken, cap, base = 3 }) {
         style={{
           width: 8,
           height: 8,
-          background: used ? '#F4F4F6' : 'transparent',
-          border: used ? 'none' : earned && cap <= base ? '1px dashed #63636E' : '1px solid #32323A',
+          background: used ? 'rgb(var(--c-ink))' : 'transparent',
+          border: used ? 'none' : earned && cap <= base ? '1px dashed rgb(var(--c-muted))' : '1px solid rgb(var(--c-line-strong))',
         }}
       />,
     );
@@ -444,11 +444,13 @@ export function Sparkline({ values = [], width = 72, height = 22, tone }) {
   const y = (v) => height - ((v - min) / span) * (height - 2) - 1;
   const d = values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
   const rising = values[values.length - 1] >= values[0];
-  const stroke = tone || (rising ? '#00D98B' : '#FF4D5E');
+  /* currentColor, not a literal: SVG presentation attributes do not resolve
+     var(), so the theme reaches the chart through a text colour instead. */
+  const toneCls = tone || (rising ? 'text-green' : 'text-red');
   return (
-    <svg width={width} height={height} className="shrink-0 overflow-visible">
-      <path d={`${d} L ${width} ${height} L 0 ${height} Z`} fill={stroke} opacity="0.1" />
-      <path d={d} fill="none" stroke={stroke} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    <svg width={width} height={height} className={`shrink-0 overflow-visible ${toneCls}`}>
+      <path d={`${d} L ${width} ${height} L 0 ${height} Z`} fill="currentColor" opacity="0.1" />
+      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   );
 }
@@ -502,19 +504,27 @@ export function EquityCurve({ trades = [], height = 140 }) {
   const areaPath = `${linePath} L ${x(n - 1).toFixed(1)} ${zeroY} L ${x(0).toFixed(1)} ${zeroY} Z`;
 
   const finalEquity = points[points.length - 1].equity;
-  const lineColor = finalEquity >= 0 ? '#00D98B' : '#FF4D5E';
+  const toneCls = finalEquity >= 0 ? 'text-green' : 'text-red';
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="w-full" style={{ height }}>
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      className={`w-full ${toneCls}`}
+      style={{ height }}
+    >
       <defs>
         <linearGradient id="eqfill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={lineColor} stopOpacity="0.22" />
-          <stop offset="100%" stopColor={lineColor} stopOpacity="0" />
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
         </linearGradient>
       </defs>
-      <line x1="0" y1={zeroY} x2={width} y2={zeroY} stroke="#232329" strokeWidth="1" strokeDasharray="4,4" />
+      <line
+        x1="0" y1={zeroY} x2={width} y2={zeroY}
+        className="text-line" stroke="currentColor" strokeWidth="1" strokeDasharray="4,4"
+      />
       <path d={areaPath} fill="url(#eqfill)" />
-      <path d={linePath} fill="none" stroke={lineColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      <path d={linePath} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   );
 }
@@ -572,7 +582,7 @@ export function InstitutionalPostureCard({ instData, instrument = 'NIFTY', spot 
           <div className="absolute inset-y-0 left-0 bg-line-soft" style={{ width: `${pct}%` }} />
           <div
             className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-ai rounded-full -ml-1.5"
-            style={{ left: `${pct}%`, boxShadow: '0 0 10px rgba(77,141,255,0.6)' }}
+            style={{ left: `${pct}%`, boxShadow: '0 0 10px rgb(var(--c-ai) / 0.6)' }}
           />
         </div>
       </div>

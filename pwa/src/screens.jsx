@@ -462,7 +462,7 @@ export function Locked({ s, onReadReport }) {
       <div className="text-center pt-8 pb-4">
         <div
           className="w-[104px] h-[104px] mx-auto mb-6 rounded-full grid place-items-center text-lock"
-          style={{ background: green ? '#E6F6F0' : '#FDEBEC' }}
+          style={{ background: green ? 'rgb(var(--c-green) / 0.14)' : 'rgb(var(--c-red) / 0.14)' }}
         >
           {green ? '🛡' : '🛑'}
         </div>
@@ -2293,7 +2293,7 @@ function HealthRow({ label, ok, detail }) {
         <span className="text-body">
           <span
             className="inline-block w-2 h-2 rounded-full mr-2"
-            style={{ background: ok ? '#0E9F6E' : '#D97706' }}
+            style={{ background: ok ? 'rgb(var(--c-green))' : 'rgb(var(--c-amber))' }}
           />
           {label}
         </span>

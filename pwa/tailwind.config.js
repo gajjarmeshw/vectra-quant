@@ -9,44 +9,21 @@ export default {
   safelist: ['wash-green', 'wash-red', 'wash-ai'],
   theme: {
     extend: {
-      colors: {
-        // --- surfaces, darkest to lightest ---
-        paper: '#0A0A0C',        // app background
-        card: '#121216',         // default raised surface
-        'card-2': '#17171C',     // nested / hovered surface
-        well: '#0E0E11',         // sunken surface (inputs, tracks, tables)
-        // --- ink ---
-        ink: '#F4F4F6',
-        'ink-2': '#9E9EA8',
-        muted: '#63636E',
-        // --- lines ---
-        line: '#232329',
-        'line-soft': '#1A1A1F',
-        'line-strong': '#32323A',
-        // --- semantic ---
-        green: '#00D98B',
-        'green-soft': 'rgba(0, 217, 139, 0.12)',
-        'green-glow': 'rgba(0, 217, 139, 0.28)',
-        red: '#FF4D5E',
-        'red-soft': 'rgba(255, 77, 94, 0.12)',
-        'red-glow': 'rgba(255, 77, 94, 0.28)',
-        amber: '#FFB020',
-        'amber-soft': 'rgba(255, 176, 32, 0.12)',
-        ai: '#4D8DFF',
-        'ai-soft': 'rgba(77, 141, 255, 0.12)',
-        'ai-glow': 'rgba(77, 141, 255, 0.3)',
-        // --- categorical accents (charts, tags, per-domain identity) ---
-        violet: '#A78BFA',
-        'violet-soft': 'rgba(167, 139, 250, 0.12)',
-        cyan: '#22D3EE',
-        'cyan-soft': 'rgba(34, 211, 238, 0.12)',
-        teal: '#2DD4BF',
-        'teal-soft': 'rgba(45, 212, 191, 0.12)',
-        orange: '#FB923C',
-        'orange-soft': 'rgba(251, 146, 60, 0.12)',
-        pink: '#F472B6',
-        'pink-soft': 'rgba(244, 114, 182, 0.12)',
-      },
+      /* Every colour resolves through a CSS variable defined in theme.css, so
+         one `data-theme` attribute on <html> re-skins the whole app. Channels
+         are stored bare (`R G B`) specifically so the `<alpha-value>` slot
+         keeps working — `border-line/70` is used all over the screens. */
+      colors: Object.fromEntries(
+        [
+          'paper', 'card', 'card-2', 'well',
+          'ink', 'ink-2', 'muted',
+          'line', 'line-soft', 'line-strong',
+          'green', 'red', 'amber', 'ai',
+          'violet', 'cyan', 'teal', 'orange', 'pink',
+          'green-soft', 'red-soft', 'amber-soft', 'ai-soft',
+          'violet-soft', 'cyan-soft', 'teal-soft', 'orange-soft', 'pink-soft',
+        ].map((name) => [name, `rgb(var(--c-${name}) / <alpha-value>)`]),
+      ),
       fontFamily: {
         disp: ['"Outfit"', 'system-ui', 'sans-serif'],
         body: ['"Inter"', 'system-ui', 'sans-serif'],
@@ -90,12 +67,12 @@ export default {
         cardgap: 'clamp(12px, 0.38vw + 10.6px, 16px)',
       },
       boxShadow: {
-        card: '0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.5)',
-        lift: '0 2px 4px rgba(0,0,0,0.4), 0 16px 40px -16px rgba(0,0,0,0.7)',
-        'glow-ai': '0 0 0 1px rgba(77,141,255,0.35), 0 0 24px -4px rgba(77,141,255,0.25)',
-        'glow-green': '0 0 0 1px rgba(0,217,139,0.35), 0 0 24px -4px rgba(0,217,139,0.25)',
-        'glow-red': '0 0 0 1px rgba(255,77,94,0.35), 0 0 24px -4px rgba(255,77,94,0.25)',
-        inset: 'inset 0 1px 2px rgba(0,0,0,0.5)',
+        card: 'var(--shadow-card)',
+        lift: 'var(--shadow-lift)',
+        inset: 'var(--shadow-inset)',
+        'glow-ai': '0 0 0 1px rgb(var(--c-ai) / 0.35), 0 0 24px -4px rgb(var(--c-ai) / 0.25)',
+        'glow-green': '0 0 0 1px rgb(var(--c-green) / 0.35), 0 0 24px -4px rgb(var(--c-green) / 0.25)',
+        'glow-red': '0 0 0 1px rgb(var(--c-red) / 0.35), 0 0 24px -4px rgb(var(--c-red) / 0.25)',
       },
     },
   },

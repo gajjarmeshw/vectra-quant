@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Home, Zap, FlaskConical, Database, Settings, FileText, Wifi, WifiOff } from 'lucide-react';
+import {
+  Home, Zap, FlaskConical, Database, Settings, FileText, Wifi, WifiOff, Sun, Moon,
+} from 'lucide-react';
 import { motion } from 'framer-motion';
 import * as api from './api.js';
 import { Banner, StateChip, num, pnlColor, useFlash } from './components.jsx';
 import AmbientField from './ambient.jsx';
+import { useTheme } from './theme.js';
 import {
   Locked, Positions, Signals, System, Today,
   Strategies, Backtest, DataScreen, Reports
@@ -71,6 +74,36 @@ function ConnDot({ conn, healthy }) {
   );
 }
 
+/* Light/dark switch. A sliding thumb rather than a swapped icon, so the
+   current mode is readable at a glance instead of requiring you to know
+   whether the icon shows the current state or the one you'd get. */
+function ThemeToggle({ theme, onToggle, className = '' }) {
+  const light = theme === 'light';
+  return (
+    <button
+      onClick={onToggle}
+      role="switch"
+      aria-checked={light}
+      aria-label={`Switch to ${light ? 'dark' : 'light'} theme`}
+      title={`Switch to ${light ? 'dark' : 'light'} theme`}
+      className={`relative w-[52px] h-[26px] rounded-pill border border-line bg-well shrink-0 transition-colors hover:border-line-strong ${className}`}
+    >
+      <motion.span
+        layout
+        transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+        className="absolute top-[2px] w-[20px] h-[20px] rounded-full bg-card-2 border border-line-strong grid place-items-center"
+        style={{ left: light ? 28 : 2 }}
+      >
+        {light ? (
+          <Sun size={11} strokeWidth={2.4} className="text-amber" />
+        ) : (
+          <Moon size={11} strokeWidth={2.4} className="text-ai" />
+        )}
+      </motion.span>
+    </button>
+  );
+}
+
 function Clock() {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -92,7 +125,7 @@ function Brand({ healthy, compact = false }) {
     <div className="flex items-center gap-2.5">
       <div
         className="w-7 h-7 rounded-lg grid place-items-center shrink-0"
-        style={{ background: 'linear-gradient(135deg,#4D8DFF,#2B6BE0)', boxShadow: '0 0 16px -4px rgba(77,141,255,0.6)' }}
+        style={{ background: 'linear-gradient(135deg, rgb(var(--c-ai)), rgb(var(--c-ai) / 0.72))', boxShadow: '0 0 16px -4px rgb(var(--c-ai) / 0.6)' }}
       >
         <span className="font-disp text-white text-f13 font-bold">V</span>
       </div>
@@ -106,8 +139,8 @@ function Brand({ healthy, compact = false }) {
         className="w-1.5 h-1.5 rounded-full shrink-0"
         style={
           healthy
-            ? { background: '#00D98B', boxShadow: '0 0 8px rgba(0,217,139,0.7)' }
-            : { background: '#FF4D5E', boxShadow: '0 0 8px rgba(255,77,94,0.7)' }
+            ? { background: 'rgb(var(--c-green))', boxShadow: '0 0 8px rgb(var(--c-green) / 0.7)' }
+            : { background: 'rgb(var(--c-red))', boxShadow: '0 0 8px rgb(var(--c-red) / 0.7)' }
         }
       />
     </div>
@@ -122,6 +155,7 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [pushState, setPushState] = useState('');
   const [btJob, setBtJob] = useState(null);
+  const { theme, toggle: toggleTheme } = useTheme();
   const closeRef = useRef(null);
 
   const flash = useCallback((msg) => {
@@ -229,7 +263,7 @@ export default function App() {
         <div className="text-center max-w-xs">
           <div
             className="w-12 h-12 rounded-xl grid place-items-center mx-auto"
-            style={{ background: 'linear-gradient(135deg,#4D8DFF,#2B6BE0)', boxShadow: '0 0 28px -6px rgba(77,141,255,0.7)' }}
+            style={{ background: 'linear-gradient(135deg, rgb(var(--c-ai)), rgb(var(--c-ai) / 0.72))', boxShadow: '0 0 28px -6px rgb(var(--c-ai) / 0.7)' }}
           >
             <span className="font-disp text-white text-xl font-bold">V</span>
           </div>
@@ -289,7 +323,7 @@ export default function App() {
                 <motion.div
                   layoutId="tab-indicator-mobile"
                   className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-7 h-[2px] rounded-full bg-ai"
-                  style={{ boxShadow: '0 0 10px rgba(77,141,255,0.8)' }}
+                  style={{ boxShadow: '0 0 10px rgb(var(--c-ai) / 0.8)' }}
                   transition={{ type: 'spring', stiffness: 320, damping: 26 }}
                 />
               )}
@@ -322,7 +356,7 @@ export default function App() {
                   <motion.div
                     layoutId="tab-indicator-desktop"
                     className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-ai"
-                    style={{ boxShadow: '0 0 10px rgba(77,141,255,0.8)' }}
+                    style={{ boxShadow: '0 0 10px rgb(var(--c-ai) / 0.8)' }}
                     transition={{ type: 'spring', stiffness: 320, damping: 26 }}
                   />
                 )}
@@ -338,7 +372,10 @@ export default function App() {
               {state.mode || 'PAPER'}
             </span>
           </div>
-          <Clock />
+          <div className="flex items-center justify-between">
+            <Clock />
+            <ThemeToggle theme={theme} onToggle={toggleTheme} />
+          </div>
         </div>
       </aside>
 
@@ -351,6 +388,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <ConnDot conn={conn} healthy={healthy} />
               <StateChip state={state.fsm?.state} />
+              <ThemeToggle theme={theme} onToggle={toggleTheme} />
             </div>
           </div>
 
@@ -371,7 +409,7 @@ export default function App() {
               {activeTab.title}
             </h1>
             <span className="num text-eyebrow text-muted shrink-0">
-              SESSION {state.session_date || '—'}
+              SESSION {state.session_date || state.fsm?.session_date || '—'}
             </span>
           </div>
 

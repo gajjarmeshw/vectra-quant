@@ -1,0 +1,160 @@
+/* Theme tokens.
+ *
+ * Every colour in the app resolves through one of these variables, stored as
+ * bare `R G B` channels so Tailwind can still apply opacity modifiers
+ * (`border-line/70`) via `rgb(var(--c-line) / <alpha-value>)`.
+ *
+ * The `-soft` tints are the one exception to "just change the hue": they are
+ * pre-blended per theme rather than left as a translucent overlay, because
+ * they are used both bare (`bg-amber-soft`) and with a modifier
+ * (`bg-amber-soft/40`), and Tailwind cannot apply a modifier to a colour that
+ * already carries its own alpha.
+ *
+ * Dark is the default and what the terminal was designed in. Light is not an
+ * inversion — on white, the saturated dark-mode hues fail contrast, so each
+ * accent gets its own darker light-mode value.
+ */
+
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* surfaces, darkest to lightest */
+  --c-paper: 10 10 12;
+  --c-card: 18 18 22;
+  --c-card-2: 23 23 28;
+  --c-well: 14 14 17;
+
+  /* ink */
+  --c-ink: 244 244 246;
+  --c-ink-2: 158 158 168;
+  --c-muted: 99 99 110;
+
+  /* lines */
+  --c-line: 35 35 41;
+  --c-line-soft: 26 26 31;
+  --c-line-strong: 50 50 58;
+
+  /* semantic */
+  --c-green: 0 217 139;
+  --c-red: 255 77 94;
+  --c-amber: 255 176 32;
+  --c-ai: 77 141 255;
+
+  /* categorical */
+  --c-violet: 167 139 250;
+  --c-cyan: 34 211 238;
+  --c-teal: 45 212 191;
+  --c-orange: 251 146 60;
+  --c-pink: 244 114 182;
+
+  /* soft tints — hue at 12% over the card surface */
+  --c-green-soft: 16 42 36;
+  --c-red-soft: 46 27 31;
+  --c-amber-soft: 46 37 23;
+  --c-ai-soft: 25 33 51;
+  --c-violet-soft: 36 32 49;
+  --c-cyan-soft: 20 41 45;
+  --c-teal-soft: 21 41 40;
+  --c-orange-soft: 46 33 27;
+  --c-pink-soft: 45 29 41;
+
+  /* composites the raw channels can't express */
+  --card-bg: rgba(18, 18, 22, 0.74);
+  --card-hi: rgba(255, 255, 255, 0.038);
+  --card-edge-1: rgba(255, 255, 255, 0.16);
+  --card-edge-2: rgba(255, 255, 255, 0.02);
+  --card-spot: rgba(255, 255, 255, 0.055);
+  --btn-sweep: rgba(255, 255, 255, 0.2);
+  --well-bg: linear-gradient(180deg, rgba(0, 0, 0, 0.28), rgba(255, 255, 255, 0.012));
+  --chrome-bg: rgba(18, 18, 22, 0.92);
+  --skeleton-sheen: rgba(255, 255, 255, 0.05);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.4), 0 16px 40px -16px rgba(0, 0, 0, 0.7);
+  --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+
+  /* ambient canvas */
+  --amb-dot: 120 168 255;
+  --amb-dot-idle: 160 168 200;
+  --amb-dot-idle-a: 0.055;
+  --amb-blob-a: 0.055;
+  --amb-ring-a: 0.3;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --c-paper: 243 245 248;
+  --c-card: 255 255 255;
+  --c-card-2: 242 244 247;
+  --c-well: 239 241 245;
+
+  --c-ink: 14 17 22;
+  --c-ink-2: 74 81 92;
+  --c-muted: 122 130 142;
+
+  --c-line: 225 229 235;
+  --c-line-soft: 237 240 244;
+  --c-line-strong: 203 210 219;
+
+  --c-green: 0 154 98;
+  --c-red: 214 27 68;
+  --c-amber: 176 112 8;
+  --c-ai: 37 99 235;
+
+  --c-violet: 124 58 237;
+  --c-cyan: 8 145 178;
+  --c-teal: 13 148 136;
+  --c-orange: 217 82 11;
+  --c-pink: 219 39 119;
+
+  /* hue at 13% over white */
+  --c-green-soft: 222 244 236;
+  --c-red-soft: 251 226 231;
+  --c-amber-soft: 245 237 223;
+  --c-ai-soft: 227 235 252;
+  --c-violet-soft: 238 229 253;
+  --c-cyan-soft: 223 241 245;
+  --c-teal-soft: 224 241 240;
+  --c-orange-soft: 252 233 223;
+  --c-pink-soft: 250 227 237;
+
+  --card-bg: rgba(255, 255, 255, 0.82);
+  --card-hi: rgba(255, 255, 255, 0.9);
+  --card-edge-1: rgba(255, 255, 255, 0.95);
+  --card-edge-2: rgba(15, 23, 42, 0.04);
+  --card-spot: rgba(37, 99, 235, 0.05);
+  --btn-sweep: rgba(255, 255, 255, 0.45);
+  --well-bg: linear-gradient(180deg, rgba(15, 23, 42, 0.035), rgba(255, 255, 255, 0.5));
+  --chrome-bg: rgba(255, 255, 255, 0.9);
+  --skeleton-sheen: rgba(15, 23, 42, 0.05);
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 24px -14px rgba(15, 23, 42, 0.18);
+  --shadow-lift: 0 2px 4px rgba(15, 23, 42, 0.06), 0 16px 40px -18px rgba(15, 23, 42, 0.25);
+  --shadow-inset: inset 0 1px 2px rgba(15, 23, 42, 0.06);
+
+  --amb-dot: 37 99 235;
+  --amb-dot-idle: 100 116 139;
+  --amb-dot-idle-a: 0.14;
+  --amb-blob-a: 0.07;
+  --amb-ring-a: 0.22;
+}
+
+/* Cross-fade the whole shell on a theme flip rather than hard-cutting. The
+   `.theming` class is added for the duration of the change only, so it never
+   slows down ordinary interaction. */
+.theming,
+.theming *,
+.theming *::before,
+.theming *::after {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease,
+    box-shadow 0.25s ease !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theming,
+  .theming *,
+  .theming *::before,
+  .theming *::after {
+    transition: none !important;
+  }
+}

@@ -10,6 +10,8 @@
 @import '@fontsource/jetbrains-mono/500.css';
 @import '@fontsource/jetbrains-mono/700.css';
 
+@import './theme.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -17,7 +19,7 @@
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
-    background: theme('colors.paper');
+    background: rgb(var(--c-paper));
   }
   body {
     @apply bg-paper text-ink font-body antialiased selection:bg-ai/30;
@@ -32,7 +34,7 @@
     font-feature-settings: 'tnum' 1, 'zero' 1;
   }
   :focus-visible {
-    outline: 1.5px solid theme('colors.ai');
+    outline: 1.5px solid rgb(var(--c-ai));
     outline-offset: 2px;
     border-radius: 4px;
   }
@@ -45,12 +47,12 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: theme('colors.line');
+    background: rgb(var(--c-line));
     border-radius: 999px;
-    border: 3px solid theme('colors.paper');
+    border: 3px solid rgb(var(--c-paper));
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: theme('colors.line-strong');
+    background: rgb(var(--c-line-strong));
   }
 }
 
@@ -71,8 +73,8 @@
     isolation: isolate;
     background:
       radial-gradient(130% 110% at 0% 0%, var(--wash, transparent), transparent 62%),
-      linear-gradient(180deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0) 140px),
-      rgba(18, 18, 22, 0.74);
+      linear-gradient(180deg, var(--card-hi), transparent 140px),
+      var(--card-bg);
     backdrop-filter: blur(14px) saturate(1.15);
     -webkit-backdrop-filter: blur(14px) saturate(1.15);
     transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
@@ -86,10 +88,10 @@
     padding: 1px;
     background: linear-gradient(
       145deg,
-      rgba(255, 255, 255, 0.16),
-      rgba(255, 255, 255, 0.02) 38%,
-      rgba(255, 255, 255, 0) 62%,
-      var(--edge, rgba(77, 141, 255, 0.14))
+      var(--card-edge-1),
+      var(--card-edge-2) 38%,
+      transparent 62%,
+      var(--edge, rgb(var(--c-ai) / 0.16))
     );
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
@@ -108,7 +110,7 @@
     transition: opacity 0.25s;
     background: radial-gradient(
       340px circle at var(--mx, 50%) var(--my, 0%),
-      rgba(255, 255, 255, 0.055),
+      var(--card-spot),
       transparent 70%
     );
   }
@@ -117,7 +119,7 @@
   }
   .well {
     @apply border border-line/70 rounded-block shadow-inset;
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.28), rgba(255, 255, 255, 0.012));
+    background: var(--well-bg);
   }
 
   /* --- type --- */
@@ -153,7 +155,7 @@
     background: linear-gradient(
       105deg,
       transparent 38%,
-      rgba(255, 255, 255, 0.2) 50%,
+      var(--btn-sweep) 50%,
       transparent 62%
     );
   }
@@ -169,7 +171,7 @@
   }
   .btn-primary {
     @apply btn bg-ai text-white border-0;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 20px -6px rgba(77, 141, 255, 0.5);
+    box-shadow: var(--shadow-card), 0 0 20px -6px rgb(var(--c-ai) / 0.5);
   }
   .btn-primary:hover:not(:disabled) {
     @apply brightness-110;
@@ -182,7 +184,7 @@
   }
   .btn-danger {
     @apply btn bg-red text-white border-0;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 20px -6px rgba(255, 77, 94, 0.5);
+    box-shadow: var(--shadow-card), 0 0 20px -6px rgb(var(--c-red) / 0.5);
   }
   .btn-danger:hover:not(:disabled) {
     @apply brightness-110;
@@ -216,7 +218,7 @@
   /* --- nav --- */
   .tabbar {
     @apply fixed bottom-0 inset-x-0 border-t border-line;
-    background: rgba(18, 18, 22, 0.92);
+    background: var(--chrome-bg);
     backdrop-filter: blur(16px);
     height: calc(72px + env(safe-area-inset-bottom));
     padding-bottom: env(safe-area-inset-bottom);
@@ -249,16 +251,16 @@
   /* Semantic tint for a block. Consumed by .card's own background stack and
      by its gradient hairline, so one class colours the whole panel. */
   .wash-green {
-    --wash: rgba(0, 217, 139, 0.13);
-    --edge: rgba(0, 217, 139, 0.32);
+    --wash: rgb(var(--c-green) / 0.14);
+    --edge: rgb(var(--c-green) / 0.34);
   }
   .wash-red {
-    --wash: rgba(255, 77, 94, 0.13);
-    --edge: rgba(255, 77, 94, 0.32);
+    --wash: rgb(var(--c-red) / 0.14);
+    --edge: rgb(var(--c-red) / 0.34);
   }
   .wash-ai {
-    --wash: rgba(77, 141, 255, 0.13);
-    --edge: rgba(77, 141, 255, 0.34);
+    --wash: rgb(var(--c-ai) / 0.14);
+    --edge: rgb(var(--c-ai) / 0.34);
   }
 
   /* Blocks rise into place as they enter the viewport. Applied by <Card>, so
@@ -294,15 +296,15 @@
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  background: linear-gradient(90deg, transparent, var(--skeleton-sheen), transparent);
   animation: shimmer 1.6s infinite;
 }
 
 /* Breathing ring for anything genuinely live. */
 @keyframes live-ring {
-  0% { box-shadow: 0 0 0 0 rgba(0, 217, 139, 0.5); }
-  70% { box-shadow: 0 0 0 6px rgba(0, 217, 139, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(0, 217, 139, 0); }
+  0% { box-shadow: 0 0 0 0 rgb(var(--c-green) / 0.5); }
+  70% { box-shadow: 0 0 0 6px rgb(var(--c-green) / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(var(--c-green) / 0); }
 }
 .live-ring {
   animation: live-ring 2s ease-out infinite;
@@ -332,11 +334,11 @@
 
 /* Value-changed flash, for live-updating numbers. */
 @keyframes flash-up {
-  0% { background-color: rgba(0, 217, 139, 0.22); }
+  0% { background-color: rgb(var(--c-green) / 0.22); }
   100% { background-color: transparent; }
 }
 @keyframes flash-down {
-  0% { background-color: rgba(255, 77, 94, 0.22); }
+  0% { background-color: rgb(var(--c-red) / 0.22); }
   100% { background-color: transparent; }
 }
 .flash-up { animation: flash-up 0.6s ease-out; }

@@ -36,6 +36,24 @@ export default function AmbientField() {
     let scrollY = 0;
     let raf = null;
 
+    /* Canvas takes resolved colour strings, not var() — so the theme tokens
+       are read off the document once here and re-read whenever the theme
+       attribute flips. */
+    let blobHues = ['77 141 255', '167 139 250'];
+    let palette = { dot: '120 168 255', idle: '160 168 200', idleA: 0.055, blobA: 0.055, ringA: 0.3 };
+    const readPalette = () => {
+      const cs = getComputedStyle(document.documentElement);
+      const g = (k, fallback) => cs.getPropertyValue(k).trim() || fallback;
+      palette = {
+        dot: g('--amb-dot', '120 168 255'),
+        idle: g('--amb-dot-idle', '160 168 200'),
+        idleA: parseFloat(g('--amb-dot-idle-a', '0.055')),
+        blobA: parseFloat(g('--amb-blob-a', '0.055')),
+        ringA: parseFloat(g('--amb-ring-a', '0.3')),
+      };
+      blobHues = [g('--c-ai', '77 141 255'), g('--c-violet', '167 139 250')];
+    };
+
     const resize = () => {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
       w = window.innerWidth;
@@ -71,17 +89,17 @@ export default function AmbientField() {
       /* Two counter-drifting radial washes. Lissajous paths so they never
          land on a visibly repeating loop. */
       const blobs = [
-        { x: 0.22 + 0.10 * Math.sin(t / 17000), y: 0.18 + 0.08 * Math.cos(t / 23000), c: '77,141,255', r: 0.62 },
-        { x: 0.82 + 0.09 * Math.cos(t / 19000), y: 0.74 + 0.10 * Math.sin(t / 13000), c: '167,139,250', r: 0.55 },
+        { x: 0.22 + 0.10 * Math.sin(t / 17000), y: 0.18 + 0.08 * Math.cos(t / 23000), c: blobHues[0], r: 0.62 },
+        { x: 0.82 + 0.09 * Math.cos(t / 19000), y: 0.74 + 0.10 * Math.sin(t / 13000), c: blobHues[1], r: 0.55 },
       ];
       for (const b of blobs) {
         const cx = b.x * w;
         const cy = b.y * h;
         const rad = b.r * Math.max(w, h);
         const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
-        g.addColorStop(0, `rgba(${b.c},0.055)`);
-        g.addColorStop(0.5, `rgba(${b.c},0.018)`);
-        g.addColorStop(1, `rgba(${b.c},0)`);
+        g.addColorStop(0, `rgb(${b.c} / ${palette.blobA})`);
+        g.addColorStop(0.5, `rgb(${b.c} / ${palette.blobA * 0.33})`);
+        g.addColorStop(1, `rgb(${b.c} / 0)`);
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, w, h);
       }
@@ -99,7 +117,7 @@ export default function AmbientField() {
           const d2 = dx * dx + dy * dy;
           const near = d2 < POINTER_R * POINTER_R ? 1 - Math.sqrt(d2) / POINTER_R : 0;
 
-          let a = 0.05 + 0.02 * breathe + near * 0.42;
+          let a = palette.idleA + 0.02 * breathe + near * 0.42;
           let r = 1 + near * 1.3;
 
           /* Ripple fronts light the lattice as they pass through it. */
@@ -115,10 +133,10 @@ export default function AmbientField() {
             }
           }
 
-          if (a <= 0.052) {
-            ctx.fillStyle = 'rgba(160,168,200,0.055)';
+          if (a <= palette.idleA + 0.002) {
+            ctx.fillStyle = `rgb(${palette.idle} / ${palette.idleA})`;
           } else {
-            ctx.fillStyle = `rgba(120,168,255,${Math.min(a, 0.9)})`;
+            ctx.fillStyle = `rgb(${palette.dot} / ${Math.min(a, 0.9)})`;
           }
           ctx.beginPath();
           ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -137,7 +155,7 @@ export default function AmbientField() {
         const eased = 1 - (1 - age) ** 3;
         ctx.beginPath();
         ctx.arc(ripples[i].x, ripples[i].y, eased * 260, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(77,141,255,${0.3 * (1 - age)})`;
+        ctx.strokeStyle = `rgb(${palette.dot} / ${palette.ringA * (1 - age)})`;
         ctx.lineWidth = 1.2;
         ctx.stroke();
       }
@@ -161,6 +179,11 @@ export default function AmbientField() {
     const onVisibility = () => (document.hidden ? stop() : start());
 
     resize();
+    readPalette();
+
+    /* Repaint against the new tokens the moment the theme attribute changes. */
+    const themeObserver = new MutationObserver(() => readPalette());
+    themeObserver.observe(document.documentElement, { attributeFilter: ['data-theme'] });
 
     if (reduced) {
       /* Still paint once — the depth is worth keeping, the motion isn't. */
@@ -168,7 +191,19 @@ export default function AmbientField() {
       aurora(0);
       lattice(0);
       window.addEventListener('resize', resize);
-      return () => window.removeEventListener('resize', resize);
+      const repaint = () => {
+        readPalette();
+        ctx.clearRect(0, 0, w, h);
+        aurora(0);
+        lattice(0);
+      };
+      const staticThemeObserver = new MutationObserver(repaint);
+      staticThemeObserver.observe(document.documentElement, { attributeFilter: ['data-theme'] });
+      return () => {
+        window.removeEventListener('resize', resize);
+        staticThemeObserver.disconnect();
+        themeObserver.disconnect();
+      };
     }
 
     window.addEventListener('resize', resize);
@@ -181,6 +216,7 @@ export default function AmbientField() {
 
     return () => {
       stop();
+      themeObserver.disconnect();
       window.removeEventListener('resize', resize);
       window.removeEventListener('pointermove', onPointer);
       window.removeEventListener('pointerdown', onClick);
