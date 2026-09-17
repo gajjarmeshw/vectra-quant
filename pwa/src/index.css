@@ -1,10 +1,14 @@
-/* Production UI: Professional clean typography */
+/* Trading-terminal shell. Layered surfaces, hairline borders, mono data. */
 @import '@fontsource/outfit/400.css';
+@import '@fontsource/outfit/500.css';
 @import '@fontsource/outfit/600.css';
 @import '@fontsource/outfit/700.css';
 @import '@fontsource/inter/400.css';
 @import '@fontsource/inter/500.css';
 @import '@fontsource/inter/600.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/jetbrains-mono/700.css';
 
 @tailwind base;
 @tailwind components;
@@ -16,62 +20,292 @@
     background: theme('colors.paper');
   }
   body {
-    @apply bg-paper text-ink font-body tracking-tight antialiased selection:bg-ai/30;
-    /* Dynamic Island / home bar */
+    @apply bg-paper text-ink font-body antialiased selection:bg-ai/30;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
     overscroll-behavior-y: none;
     -webkit-tap-highlight-color: transparent;
   }
-  /* Every number is mono + tabular. Non-negotiable per §1 typography. */
+  /* Every number is mono + tabular. Non-negotiable. */
   .num {
     @apply font-mono;
     font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1, 'zero' 1;
   }
   :focus-visible {
-    outline: 2px solid theme('colors.ink');
+    outline: 1.5px solid theme('colors.ai');
     outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* Terminal-grade scrollbars: present but never loud. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: theme('colors.line');
+    border-radius: 999px;
+    border: 3px solid theme('colors.paper');
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: theme('colors.line-strong');
   }
 }
 
 @layer components {
+  /* --- surfaces ---
+     A block is four stacked layers, not a flat fill:
+       · a translucent body, so the ambient field drifts behind it;
+       · an optional semantic `--wash` radial tint (set by .wash-*);
+       · a top-down highlight, so it catches light like a physical panel;
+       · ::before, a masked gradient hairline that is brighter top-left than
+         bottom-right — the thing that actually makes it read as raised;
+       · ::after, a cursor-tracking spotlight fed by --mx/--my.
+     Both pseudo-elements are spoken for here, which is why `wash` is a custom
+     property rather than a third overlay. */
   .card {
-    @apply bg-card border border-line shadow-sm rounded-card p-cardpad;
+    @apply rounded-card p-cardpad border border-line shadow-card;
+    position: relative;
+    isolation: isolate;
+    background:
+      radial-gradient(130% 110% at 0% 0%, var(--wash, transparent), transparent 62%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0) 140px),
+      rgba(18, 18, 22, 0.74);
+    backdrop-filter: blur(14px) saturate(1.15);
+    -webkit-backdrop-filter: blur(14px) saturate(1.15);
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
   }
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.16),
+      rgba(255, 255, 255, 0.02) 38%,
+      rgba(255, 255, 255, 0) 62%,
+      var(--edge, rgba(77, 141, 255, 0.14))
+    );
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+  .card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s;
+    background: radial-gradient(
+      340px circle at var(--mx, 50%) var(--my, 0%),
+      rgba(255, 255, 255, 0.055),
+      transparent 70%
+    );
+  }
+  .card:hover::after {
+    opacity: 1;
+  }
+  .well {
+    @apply border border-line/70 rounded-block shadow-inset;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.28), rgba(255, 255, 255, 0.012));
+  }
+
+  /* --- type --- */
   .eyebrow {
-    @apply num text-eyebrow uppercase text-muted tracking-widest font-medium;
+    @apply num text-eyebrow uppercase text-muted font-medium;
   }
+  .section-title {
+    @apply font-disp font-semibold text-ink tracking-tight;
+    font-size: 15px;
+  }
+
+  /* --- chips --- */
   .chip {
-    @apply num text-chip px-2.5 py-1 rounded-pill border border-line shadow-sm;
+    @apply num text-chip px-2 py-[3px] rounded-pill border border-line bg-line-soft uppercase font-medium;
   }
+
+  /* --- buttons --- */
   .btn {
-    @apply font-disp text-btn font-semibold w-full rounded-pill transition-all duration-150 shadow-sm;
-    padding-top: 17px;
-    padding-bottom: 17px;
+    @apply font-disp text-btn font-semibold w-full rounded-block transition-all duration-150;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    position: relative;
+    overflow: hidden;
+  }
+  /* A light sweeps across on hover — confirms the control is live before you
+     commit to clicking it. */
+  .btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    transform: translateX(-130%);
+    background: linear-gradient(
+      105deg,
+      transparent 38%,
+      rgba(255, 255, 255, 0.2) 50%,
+      transparent 62%
+    );
+  }
+  .btn:hover:not(:disabled)::after {
+    animation: btn-sweep 0.7s ease-out;
   }
   .btn:active:not(:disabled) {
-    transform: scale(0.97);
+    transform: scale(0.985);
   }
   .btn:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
+    cursor: not-allowed;
   }
   .btn-primary {
-    @apply btn bg-ai text-white shadow-md border-0 hover:brightness-110;
+    @apply btn bg-ai text-white border-0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 20px -6px rgba(77, 141, 255, 0.5);
+  }
+  .btn-primary:hover:not(:disabled) {
+    @apply brightness-110;
   }
   .btn-ghost {
-    @apply btn bg-line-soft text-ink border border-line hover:brightness-110;
+    @apply btn bg-card-2 text-ink border border-line;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    @apply border-line-strong bg-card;
   }
   .btn-danger {
-    @apply btn bg-red text-white shadow-md border-0 hover:brightness-110;
+    @apply btn bg-red text-white border-0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 20px -6px rgba(255, 77, 94, 0.5);
+  }
+  .btn-danger:hover:not(:disabled) {
+    @apply brightness-110;
   }
   .btn-dashed {
     @apply btn bg-transparent text-muted border border-dashed border-line;
   }
-  .tabbar {
-    @apply fixed bottom-0 inset-x-0 border-t border-line bg-card shadow-[0_-4px_24px_rgba(0,0,0,0.3)];
+  .btn-dashed:hover:not(:disabled) {
+    @apply text-ink-2 border-line-strong;
+  }
 
-    height: calc(86px + env(safe-area-inset-bottom));
+  /* --- data tables --- */
+  .tbl {
+    @apply w-full num text-sec;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  .tbl thead th {
+    @apply eyebrow text-left px-3 py-2 bg-well border-b border-line sticky top-0 z-10;
+  }
+  .tbl tbody td {
+    @apply px-3 py-2 border-b border-line/50 text-ink-2;
+  }
+  .tbl tbody tr:hover td {
+    @apply bg-card-2 text-ink;
+  }
+  .tbl tbody tr:last-child td {
+    @apply border-b-0;
+  }
+
+  /* --- nav --- */
+  .tabbar {
+    @apply fixed bottom-0 inset-x-0 border-t border-line;
+    background: rgba(18, 18, 22, 0.92);
+    backdrop-filter: blur(16px);
+    height: calc(72px + env(safe-area-inset-bottom));
     padding-bottom: env(safe-area-inset-bottom);
   }
+
+  /* --- ticker --- */
+  .ticker-cell {
+    @apply flex items-baseline gap-1.5 px-3 border-r border-line/60 shrink-0;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Cards that respond to the cursor — subtle, never bouncy. */
+  .hoverable {
+    @apply transition-all duration-200;
+  }
+  .hoverable:hover {
+    @apply border-line-strong shadow-lift;
+    transform: translateY(-1px);
+  }
+
+  /* Semantic tint for a block. Consumed by .card's own background stack and
+     by its gradient hairline, so one class colours the whole panel. */
+  .wash-green {
+    --wash: rgba(0, 217, 139, 0.13);
+    --edge: rgba(0, 217, 139, 0.32);
+  }
+  .wash-red {
+    --wash: rgba(255, 77, 94, 0.13);
+    --edge: rgba(255, 77, 94, 0.32);
+  }
+  .wash-ai {
+    --wash: rgba(77, 141, 255, 0.13);
+    --edge: rgba(77, 141, 255, 0.34);
+  }
+
+  /* Blocks rise into place as they enter the viewport. Applied by <Card>, so
+     scrolling a long screen reveals it section by section instead of dumping
+     the whole wall at once. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  .reveal-in {
+    opacity: 1;
+    transform: none;
+    transition: opacity 0.45s cubic-bezier(0.2, 0.7, 0.3, 1),
+      transform 0.45s cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+}
+
+@keyframes btn-sweep {
+  to {
+    transform: translateX(130%);
+  }
+}
+
+/* Shimmer skeleton for loading states. */
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+.skeleton {
+  @apply relative overflow-hidden bg-well rounded-block;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  animation: shimmer 1.6s infinite;
+}
+
+/* Breathing ring for anything genuinely live. */
+@keyframes live-ring {
+  0% { box-shadow: 0 0 0 0 rgba(0, 217, 139, 0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(0, 217, 139, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 217, 139, 0); }
+}
+.live-ring {
+  animation: live-ring 2s ease-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -89,9 +323,21 @@
     opacity: 1;
   }
   50% {
-    opacity: 0.35;
+    opacity: 0.3;
   }
 }
 .ai-pulse {
-  animation: pulse-dot 1.6s ease-in-out infinite;
+  animation: pulse-dot 1.8s ease-in-out infinite;
 }
+
+/* Value-changed flash, for live-updating numbers. */
+@keyframes flash-up {
+  0% { background-color: rgba(0, 217, 139, 0.22); }
+  100% { background-color: transparent; }
+}
+@keyframes flash-down {
+  0% { background-color: rgba(255, 77, 94, 0.22); }
+  100% { background-color: transparent; }
+}
+.flash-up { animation: flash-up 0.6s ease-out; }
+.flash-down { animation: flash-down 0.6s ease-out; }

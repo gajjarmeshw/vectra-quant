@@ -1,11 +1,30 @@
 /* The seven screens. docs/design_spec.md §3. */
 import React, { useEffect, useRef, useState } from 'react';
+import { CheckCircle2, Percent, Layers } from 'lucide-react';
 import {
   Banner, Card, DayRail, Empty, Eyebrow, OriginTag, Row, SlTrack, Stat, StateChip,
   TradeDots, num, pnlColor, rupee, InstitutionalPostureCard,
-  ProgressRail, EquityCurve, MiniBars,
+  ProgressRail, EquityCurve, MiniBars, SectionHeader, StatTile, Delta, Sparkline,
+  AnimatedRupee, Skeleton, SkeletonCard,
 } from './components.jsx';
 import * as api from './api.js';
+
+/* Each strategy family gets a stable colour so it's recognisable wherever it
+   appears — catalog card, order-flow panel, backtest picker. */
+const STRATEGY_ACCENT = {
+  breadth: 'cyan',
+  thunderbolt: 'violet',
+  weekly_credit_spread: 'orange',
+  renko_strategy: 'teal',
+};
+
+const ACCENT_CLASSES = {
+  cyan: { bg: 'bg-cyan', text: 'text-cyan', border: 'border-cyan/50', chip: '!bg-cyan-soft !text-cyan !border-cyan/40' },
+  violet: { bg: 'bg-violet', text: 'text-violet', border: 'border-violet/50', chip: '!bg-violet-soft !text-violet !border-violet/40' },
+  orange: { bg: 'bg-orange', text: 'text-orange', border: 'border-orange/50', chip: '!bg-orange-soft !text-orange !border-orange/40' },
+  teal: { bg: 'bg-teal', text: 'text-teal', border: 'border-teal/50', chip: '!bg-teal-soft !text-teal !border-teal/40' },
+  ai: { bg: 'bg-ai', text: 'text-ai', border: 'border-ai/50', chip: '!bg-ai-soft !text-ai !border-ai/40' },
+};
 
 /* IST wall-clock from an ISO timestamp — the phone may be anywhere. */
 const hhmm = (iso) =>
@@ -15,65 +34,48 @@ const hhmm = (iso) =>
 
 /* ---------------------------------------------------------------- Today */
 
-export function PaperTrading({ s, onSquareOff }) {
+export function Today({ s, onSquareOff }) {
   const fsm = s.fsm || {};
-  const isPaper = s.mode === 'PAPER';
+  const closed = (s.trades || []).filter((t) => t.status === 'CLOSED');
+  const wins = closed.filter((t) => (t.pnl || 0) > 0).length;
 
   return (
     <div className="space-y-cardgap">
-      <Card className="bg-line-soft border-line">
-        <Eyebrow>Paper Trading Mode</Eyebrow>
-        <div className="text-body text-ink-2 mt-2">
-          {isPaper ? (
-            <span className="text-green font-semibold">✅ You are currently in Paper Trading mode.</span>
-          ) : (
-            <span className="text-amber font-semibold">⚠️ You are currently in LIVE mode.</span>
-          )}
-          <br /><br />
-          To switch modes, please change <code className="bg-card px-1 py-0.5 rounded text-xs font-mono">IS_LIVE=false</code> in your <code className="bg-card px-1 py-0.5 rounded text-xs font-mono">.env</code> file and restart the VectraQuant backend terminal.
-        </div>
-      </Card>
-      {isPaper && <Today s={s} onSquareOff={onSquareOff} />}
-    </div>
-  );
-}
-
-export function Today({ s, onSquareOff, onReadReport }) {
-  const fsm = s.fsm || {};
-  const m = s.market || {};
-  return (
-    <div className="space-y-cardgap">
-      <div className="grid grid-cols-3 gap-2">
-        {['SENSEX', 'NIFTY', 'INDIAVIX'].map((k) => {
-          const q = m[k] || {};
-          const ch = q.change_pct;
-          return (
-            <div key={k} className="card !rounded-block !p-3">
-              <Eyebrow>{k === 'INDIAVIX' ? 'INDIA VIX' : k}</Eyebrow>
-              <div className="num text-body font-semibold mt-1">
-                {q.ltp == null
-                  ? '—'
-                  : Number(q.ltp).toLocaleString('en-IN', {
-                      maximumFractionDigits: k === 'INDIAVIX' ? 2 : 0,
-                    })}
-              </div>
-              <div className={`num text-eyebrow mt-0.5 ${pnlColor(ch)}`}>
-                {ch == null ? '—' : `${ch > 0 ? '+' : ''}${num(ch, 2)}%`}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <PremarketCard />
-
-      <Card>
+      {/* Hero: the one number that matters, with the rail underneath it. */}
+      <Card
+        tone={fsm.day_pnl > 0 ? 'green' : fsm.day_pnl < 0 ? 'red' : ''}
+        wash={fsm.day_pnl > 0 ? 'green' : fsm.day_pnl < 0 ? 'red' : 'ai'}
+      >
         <Row
           left={<Eyebrow>Day P&amp;L</Eyebrow>}
-          right={<StateChip state={fsm.state} floor={fsm.floor} />}
+          right={<StateChip state={fsm.state} />}
         />
-        <div className={`num text-hero mt-1 ${pnlColor(fsm.day_pnl)}`}>
-          {rupee(fsm.day_pnl, true)}
+        <div className={`text-hero mt-2 font-medium ${pnlColor(fsm.day_pnl)}`}>
+          <AnimatedRupee value={fsm.day_pnl} />
+        </div>
+        {fsm.loss_limit != null && (
+          <DayRail
+            dayPnl={fsm.day_pnl || 0}
+            floor={fsm.floor || 0}
+            target={fsm.target || 0}
+            lossLimit={fsm.loss_limit || 0}
+          />
+        )}
+        <div className="grid grid-cols-3 gap-2 mt-4">
+          <StatTile label="Closed" value={closed.length} accent="violet" icon={CheckCircle2} />
+          <StatTile
+            label="Win rate"
+            value={closed.length ? `${Math.round((wins / closed.length) * 100)}%` : '—'}
+            tone={closed.length && wins / closed.length >= 0.5 ? 'text-green' : ''}
+            accent="cyan"
+            icon={Percent}
+          />
+          <StatTile
+            label="Open"
+            value={(s.positions || []).length}
+            accent="orange"
+            icon={Layers}
+          />
         </div>
       </Card>
 
@@ -83,55 +85,63 @@ export function Today({ s, onSquareOff, onReadReport }) {
         </Banner>
       )}
 
-      <Card>
-        <Eyebrow>Closed today</Eyebrow>
-        {(s.trades || []).filter((t) => t.status === 'CLOSED').length === 0 ? (
-          <Empty>No closed trades yet.</Empty>
-        ) : (
-          <div className="mt-3 space-y-3">
-            {(s.trades || [])
-              .filter((t) => t.status === 'CLOSED')
-              .map((t, i) => (
-                <Row
-                  key={t.id}
-                  className="pb-3 border-b border-line last:border-0"
-                  left={
-                    <>
-                      <Eyebrow>
-                        Trade {i + 1}
-                        {t.closed_at ? ` · closed ${hhmm(t.closed_at)}` : ''}
-                      </Eyebrow>
-                      <div className="font-disp text-body font-semibold mt-1">{t.symbol}</div>
-                      <div className="num text-eyebrow text-muted mt-1">
-                        {num(t.entry)} → {num(t.exit)} · {t.reason} · charges{' '}
-                        {rupee(t.costs)}
-                      </div>
-                    </>
-                  }
-                  right={
-                    <>
-                      <div className={`num text-body font-semibold ${pnlColor(t.pnl)}`}>
-                        {rupee(t.pnl, true)}
-                      </div>
-                      <div className="mt-1.5">
-                        <OriginTag origin={t.origin} />
-                      </div>
-                    </>
-                  }
-                />
-              ))}
-          </div>
-        )}
-      </Card>
+      <PremarketCard />
 
-      {(s.positions || []).length > 0 && (
-        <button className="btn-danger" onClick={onSquareOff}>
-          Square off everything
-        </button>
-      )}
+      <ClosedTradesTable title="Closed today" rows={closed} empty="No closed trades yet." />
 
       <StatusStrip s={s} />
     </div>
+  );
+}
+
+/* The single rendering of a fill list. Home feeds it live state, Reports feeds
+   it the archived day-end replay — previously two divergent layouts of the
+   same seven columns. */
+export function ClosedTradesTable({ title, rows = [], empty = 'Nothing here yet.' }) {
+  const net = rows.reduce((a, t) => a + (t.pnl || 0), 0);
+  return (
+    <Card className="!p-0 overflow-hidden">
+      <div className="px-cardpad pt-cardpad pb-2.5 flex items-center justify-between">
+        <Eyebrow>{title}</Eyebrow>
+        {rows.length > 0 && (
+          <span className={`num text-sec font-medium ${pnlColor(net)}`}>{rupee(net, true)}</span>
+        )}
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-cardpad pb-cardpad">
+          <Empty>{empty}</Empty>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Symbol</th>
+                <th className="text-right">Entry</th>
+                <th className="text-right">Exit</th>
+                <th>Reason</th>
+                <th className="text-right">Charges</th>
+                <th className="text-right">Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((t, i) => (
+                <tr key={t.id ?? i}>
+                  <td className="whitespace-nowrap">{t.closed_at ? hhmm(t.closed_at) : '—'}</td>
+                  <td className="text-ink font-medium whitespace-nowrap">{t.symbol}</td>
+                  <td className="text-right">{num(t.entry)}</td>
+                  <td className="text-right">{num(t.exit)}</td>
+                  <td className="whitespace-nowrap">{t.reason || '—'}</td>
+                  <td className="text-right text-muted">{rupee(t.costs)}</td>
+                  <td className={`text-right font-medium ${pnlColor(t.pnl)}`}>{rupee(t.pnl, true)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -169,14 +179,14 @@ export function AlgoStrategyBanner({ algo }) {
           <Eyebrow>Active Algo Strategy</Eyebrow>
         </div>
         <span
-          className={`chip font-semibold text-[11px] px-2 py-0.5 rounded-full border ${
+          className={`chip font-semibold text-f11 px-2 py-0.5 rounded-full border ${
             isAuto ? 'bg-ai-soft text-ai border-ai-soft' : 'bg-line-soft text-ink-2 border-line'
           }`}
         >
           {isAuto ? '⚡ Auto-Pilot' : '✋ Assisted'}
         </span>
       </div>
-      <div className="font-disp text-[15px] font-semibold text-ink">
+      <div className="font-disp text-f15 font-semibold text-ink">
         {activeLabel}
       </div>
       <div className="num text-sec text-muted">
@@ -347,16 +357,28 @@ function SuggestionCard({ q, onApprove, onReject, busy }) {
 
 export function Positions({ s, onSquareOff, busy }) {
   const ps = s.positions || [];
+  const totalUnreal = ps.reduce((a, p) => a + (Number(p.unrealized) || 0), 0);
+
   if (ps.length === 0) {
     return (
-      <Card>
+      <div>
+        <SectionHeader title="Open positions" />
         <Empty>Flat. Nothing at risk.</Empty>
-      </Card>
+      </div>
     );
   }
   const openTrades = (s.trades || []).filter((t) => t.status === 'OPEN');
   return (
     <div className="space-y-cardgap">
+      <SectionHeader
+        title="Open positions"
+        sub={`${ps.length} held`}
+        right={
+          <span className={`num text-contract font-medium ${pnlColor(totalUnreal)}`}>
+            {rupee(totalUnreal, true)}
+          </span>
+        }
+      />
       {ps.map((p) => {
         const t = openTrades.find((x) => x.symbol === p.symbol);
         return (
@@ -385,7 +407,7 @@ export function Positions({ s, onSquareOff, busy }) {
             <SlTrack sl={t?.sl} target={t?.target} ltp={p.ltp} entry={p.avg} />
             {t?.guardian_note && (
               <div className="flex gap-2.5 items-start mt-3.5 pt-3 border-t border-dashed border-line">
-                <span className="shrink-0 w-[22px] h-[22px] rounded-full bg-amber-soft text-amber grid place-items-center text-[11px]">
+                <span className="shrink-0 w-[22px] h-[22px] rounded-full bg-amber-soft text-amber grid place-items-center text-f11">
                   ⛨
                 </span>
                 <span className="text-sec text-ink-2">
@@ -439,7 +461,7 @@ export function Locked({ s, onReadReport }) {
     <div className="space-y-cardgap">
       <div className="text-center pt-8 pb-4">
         <div
-          className="w-[104px] h-[104px] mx-auto mb-6 rounded-full grid place-items-center text-[38px]"
+          className="w-[104px] h-[104px] mx-auto mb-6 rounded-full grid place-items-center text-lock"
           style={{ background: green ? '#E6F6F0' : '#FDEBEC' }}
         >
           {green ? '🛡' : '🛑'}
@@ -497,7 +519,7 @@ export function Journal() {
     api.getJournal().then(setJ).catch((e) => setErr(e.message));
   }, []);
   if (err) return <Card><Empty>{err}</Empty></Card>;
-  if (!j) return <Card><Empty>Loading…</Empty></Card>;
+  if (!j) return <SkeletonCard rows={4} />;
 
   const st = j.stats || {};
   const cal = j.calibration || {};
@@ -567,6 +589,39 @@ export function Journal() {
   );
 }
 
+/* ---------------------------------------------------------------- Reports */
+
+/* One destination for everything retrospective. The day-end verdict and the
+   rolling journal used to be reachable from four different buttons (Today,
+   Locked, System, and a full-screen overlay) — they are two views of the same
+   archive, so they live behind one segmented control here. */
+const REPORT_VIEWS = [
+  { id: 'dayend', label: 'Day-end' },
+  { id: 'journal', label: 'Journal' },
+];
+
+export function Reports() {
+  const [view, setView] = useState('dayend');
+  return (
+    <div className="space-y-cardgap">
+      <div className="well p-1 inline-flex gap-1">
+        {REPORT_VIEWS.map((v) => (
+          <button
+            key={v.id}
+            onClick={() => setView(v.id)}
+            className={`font-disp text-btn font-medium px-4 py-1.5 rounded-[7px] transition-colors ${
+              view === v.id ? 'bg-card-2 text-ink shadow-card' : 'text-muted hover:text-ink-2'
+            }`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+      {view === 'dayend' ? <DayEnd /> : <Journal />}
+    </div>
+  );
+}
+
 /* ---------------------------------------------------------------- Strategies */
 
 export function Strategies({ s, onRefresh }) {
@@ -617,52 +672,53 @@ export function Strategies({ s, onRefresh }) {
     <div className="space-y-cardgap">
       {toast && <Banner tone="green">{toast}</Banner>}
 
-      {/* Active Strategy & Operational Mode Card */}
-      <Card className="border border-line">
-        <div className="flex items-center justify-between">
-          <Eyebrow>Active Execution Posture</Eyebrow>
-          <span
-            className={`chip font-semibold text-[11px] px-2.5 py-0.5 rounded-full border ${
-              autoExec ? 'bg-ai-soft text-ai border-ai-soft' : 'bg-line-soft text-ink-2 border-line'
-            }`}
-          >
-            {autoExec ? '⚡ Auto-Pilot' : '✋ Assisted'}
+      <SectionHeader
+        title="Algo strategies"
+        sub={`${activeStrats.length} active · ${strategies.length} registered`}
+        right={
+          <span className={`chip font-semibold ${autoExec ? '!bg-ai-soft !text-ai !border-ai/40' : ''}`}>
+            {autoExec ? 'AUTO-PILOT' : 'ASSISTED'}
           </span>
-        </div>
+        }
+      />
 
-        <div className="font-disp text-lock font-bold text-ink mt-2">
-          {activeStrats.length > 0 
-            ? activeStrats.map(strat => strategies.find((x) => x.name === strat)?.display_name || strat.replace(/_/g, ' ').toUpperCase()).join(', ')
+      {/* Active Strategy & Operational Mode Card */}
+      <Card tone={autoExec ? 'ai' : ''}>
+        <Eyebrow>Active execution posture</Eyebrow>
+
+        <div className="font-disp text-contract font-semibold text-ink mt-2 leading-snug">
+          {activeStrats.length > 0
+            ? activeStrats.map(strat => strategies.find((x) => x.name === strat)?.display_name || strat.replace(/_/g, ' ').toUpperCase()).join(' · ')
             : 'NONE ACTIVE'}
         </div>
-        <p className="text-sec text-ink-2 mt-1">
+        <p className="text-sec text-ink-2 mt-2 leading-relaxed">
           {autoExec
-            ? 'Signals meeting institutional criteria automatically execute through the deterministic Risk Engine FSM directly to the broker.'
+            ? 'Signals meeting institutional criteria execute automatically through the Risk Engine FSM, straight to the broker.'
             : 'Signals require 1-tap manual review in the Signals tab before orders reach the broker.'}
         </p>
 
         <div className="mt-4 pt-3 border-t border-line">
-          <label className="text-eyebrow num text-muted block mb-1.5">Switch Execution Mode</label>
+          <Eyebrow className="mb-2">Switch execution mode</Eyebrow>
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
               disabled={saving}
-              className={`rounded-block py-2.5 px-3 text-xs font-semibold border transition-all ${
+              className={`rounded-block py-2.5 px-3 text-sec font-semibold border transition-all disabled:opacity-50 ${
                 !autoExec
-                  ? 'bg-ink text-paper border-ink shadow-sm'
-                  : 'bg-white text-ink-2 border-line hover:border-ink'
+                  ? 'bg-ink text-paper border-ink'
+                  : 'bg-card-2 text-ink-2 border-line hover:text-ink hover:border-line-strong'
               }`}
               onClick={() => onSave(activeStrats, false)}
             >
-              ✋ Assisted Mode
+              ✋ Assisted
             </button>
             <button
               type="button"
               disabled={saving}
-              className={`rounded-block py-2.5 px-3 text-xs font-semibold border transition-all ${
+              className={`rounded-block py-2.5 px-3 text-sec font-semibold border transition-all disabled:opacity-50 ${
                 autoExec
-                  ? 'bg-ai text-white border-ai shadow-sm'
-                  : 'bg-white text-ink-2 border-line hover:border-ai'
+                  ? 'bg-ai text-white border-ai'
+                  : 'bg-card-2 text-ink-2 border-line hover:text-ink hover:border-ai/50'
               }`}
               onClick={() => onSave(activeStrats, true)}
             >
@@ -672,46 +728,51 @@ export function Strategies({ s, onRefresh }) {
         </div>
       </Card>
 
-      {/* Strategy Catalog Header */}
-      <Card>
-        <Eyebrow>Dynamic Strategy Catalog</Eyebrow>
-        <p className="text-body text-ink-2 mt-1">
-          Select institutional strategies below to activate them live across market hours.
-        </p>
-      </Card>
+      <Eyebrow className="!mt-1">Strategy catalog</Eyebrow>
 
-      {/* Strategy Cards */}
+      {/* Strategy Cards — each carries its own accent so the catalog reads as
+          distinct entities rather than one undifferentiated stack. */}
       <div className="space-y-3">
         {strategies.map((st) => {
           const isActive = activeStrats.includes(st.name);
+          const accent = STRATEGY_ACCENT[st.name] || 'ai';
+          const A = ACCENT_CLASSES[accent];
           return (
             <Card
               key={st.name}
-              className={`border transition-all ${isActive ? 'border-ai ring-1 ring-ai/30 shadow-sm' : 'border-line'}`}
+              hover
+              className={`relative overflow-hidden ${isActive ? A.border : 'border-line'}`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-2">
+              {/* accent spine */}
+              <div className={`absolute left-0 inset-y-0 w-[3px] ${isActive ? A.bg : 'bg-line'}`} />
+
+              <div className="flex items-start justify-between gap-2 pl-1.5">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${A.bg} ${isActive ? 'live-ring' : 'opacity-40'}`} />
                     <span className="font-disp font-semibold text-body text-ink">
                       {st.display_name || st.name.replace(/_/g, ' ').toUpperCase()}
                     </span>
-                    <span className="chip text-[10px] py-0 px-1.5">v{st.version || '1.0'}</span>
+                    <span className="chip">v{st.version || '1.0'}</span>
+                    {st.execution_mode && st.execution_mode !== 'standard' && (
+                      <span className={`chip ${A.chip}`}>{st.execution_mode.replace(/_/g, ' ')}</span>
+                    )}
                   </div>
-                  <div className="num text-eyebrow text-muted mt-0.5">
-                    Focus: {(st.instrument_focus || ['NIFTY', 'SENSEX']).join(' · ')}
+                  <div className="num text-eyebrow text-muted mt-1.5">
+                    {(st.instrument_focus || ['NIFTY', 'SENSEX']).join(' · ')}
                   </div>
                 </div>
                 {isActive ? (
                   <button
-                    className="chip bg-green-soft text-green border-green text-[11px] font-semibold cursor-pointer"
+                    className="chip !bg-green-soft !text-green !border-green/40 font-semibold cursor-pointer shrink-0"
                     disabled={saving}
                     onClick={() => toggleStrategy(st.name)}
                   >
-                    ✓ Active
+                    ✓ ACTIVE
                   </button>
                 ) : (
                   <button
-                    className="btn-ghost !w-auto text-xs py-1 px-3 border border-line"
+                    className="btn-ghost !w-auto !py-1.5 px-3 text-sec shrink-0"
                     disabled={saving}
                     onClick={() => toggleStrategy(st.name)}
                   >
@@ -723,7 +784,7 @@ export function Strategies({ s, onRefresh }) {
               <p className="text-sec text-ink-2 mt-2.5 leading-relaxed">{st.description}</p>
 
               {st.default_params && (
-                <div className="mt-3 pt-2.5 border-t border-line/60 flex flex-wrap gap-1.5 text-[11px] num text-muted">
+                <div className="mt-3 pt-2.5 border-t border-line/60 flex flex-wrap gap-1.5 text-f11 num text-muted">
                   {Object.entries(st.default_params).map(([k, v]) => (
                     <span key={k} className="px-2 py-0.5 rounded-pill bg-line-soft text-ink-2">
                       {k}: <b>{String(v)}</b>
@@ -773,7 +834,10 @@ function ThunderboltOrderFlowCard({ active }) {
     return (
       <Card className="border border-line">
         <Eyebrow>Order Flow — Nifty Thunderbolt</Eyebrow>
-        <p className="text-sec text-ink-2 mt-2">Loading…</p>
+        <div className="mt-3 space-y-2">
+          <Skeleton h={12} w="60%" />
+          <Skeleton h={12} w="45%" />
+        </div>
       </Card>
     );
   }
@@ -807,18 +871,18 @@ function ThunderboltOrderFlowCard({ active }) {
   };
 
   return (
-    <Card className={`border ${active ? 'border-ai ring-1 ring-ai/30' : 'border-line'}`}>
+    <Card hover tone={active ? 'violet' : ''} className={active ? 'border-violet/50' : ''}>
       <div className="flex items-center justify-between">
         <Eyebrow>Order Flow — Nifty Thunderbolt</Eyebrow>
-        <span className={`chip text-[11px] font-semibold ${feedLive ? 'bg-green-soft text-green border-green' : 'bg-red-soft text-red border-red'}`}>
+        <span className={`chip text-f11 font-semibold ${feedLive ? 'bg-green-soft text-green border-green' : 'bg-red-soft text-red border-red'}`}>
           {feedLive ? '● Feed live' : '○ Feed down'}
         </span>
       </div>
       {!active && (
-        <p className="text-[11px] text-muted mt-1">Not in your active strategies list — shown for visibility only.</p>
+        <p className="text-f11 text-muted mt-1">Not in your active strategies list — shown for visibility only.</p>
       )}
 
-      <div className="grid grid-cols-2 gap-2 mt-3 text-[11px] num">
+      <div className="grid grid-cols-2 gap-2 mt-3 text-f11 num">
         <div className="px-2.5 py-2 rounded-block bg-line-soft">
           <div className="text-muted">Last tick</div>
           <div className="text-ink font-semibold">{recencySeconds === null ? '—' : `${recencySeconds}s ago`}</div>
@@ -860,7 +924,7 @@ function ThunderboltOrderFlowCard({ active }) {
         <div className="text-eyebrow num text-muted mb-1">Why it {record?.position ? 'fired' : 'hasn\'t fired'}</div>
         <p className="text-sec text-ink leading-relaxed">{verdictReason()}</p>
         {trace?.trigger && (
-          <p className="text-[11px] text-muted mt-1 num">
+          <p className="text-f11 text-muted mt-1 num">
             Trigger: {trace.trigger.direction} via {trace.trigger.source} at {trace.trigger.value}
           </p>
         )}
@@ -901,7 +965,10 @@ function BreadthOrderFlowCard({ active }) {
     return (
       <Card className="border border-line">
         <Eyebrow>Order Flow — Breadth (NIFTY100)</Eyebrow>
-        <p className="text-sec text-ink-2 mt-2">Loading…</p>
+        <div className="mt-3 space-y-2">
+          <Skeleton h={12} w="60%" />
+          <Skeleton h={12} w="45%" />
+        </div>
       </Card>
     );
   }
@@ -928,18 +995,18 @@ function BreadthOrderFlowCard({ active }) {
   };
 
   return (
-    <Card className={`border ${active ? 'border-ai ring-1 ring-ai/30' : 'border-line'}`}>
+    <Card hover tone={active ? 'cyan' : ''} className={active ? 'border-cyan/50' : ''}>
       <div className="flex items-center justify-between">
         <Eyebrow>Order Flow — Breadth (NIFTY100)</Eyebrow>
-        <span className={`chip text-[11px] font-semibold ${allLive ? 'bg-green-soft text-green border-green' : 'bg-red-soft text-red border-red'}`}>
+        <span className={`chip text-f11 font-semibold ${allLive ? 'bg-green-soft text-green border-green' : 'bg-red-soft text-red border-red'}`}>
           {allLive ? '● All feeds live' : '○ Feed(s) down'}
         </span>
       </div>
       {!active && (
-        <p className="text-[11px] text-muted mt-1">Not in your active strategies list — shown for visibility only.</p>
+        <p className="text-f11 text-muted mt-1">Not in your active strategies list — shown for visibility only.</p>
       )}
 
-      <div className="grid grid-cols-3 gap-2 mt-3 text-[11px] num">
+      <div className="grid grid-cols-3 gap-2 mt-3 text-f11 num">
         {connStatuses.map((c) => (
           <div key={c.label} className="px-2 py-2 rounded-block bg-line-soft">
             <div className="text-muted truncate">{c.label.replace('_conn', ' #')}</div>
@@ -951,7 +1018,7 @@ function BreadthOrderFlowCard({ active }) {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 mt-2 text-[11px] num">
+      <div className="grid grid-cols-2 gap-2 mt-2 text-f11 num">
         <div className="px-2.5 py-2 rounded-block bg-line-soft">
           <div className="text-muted">Stocks reporting</div>
           <div className="text-ink font-semibold">{live?.n_stocks_reporting ?? '—'} / 100</div>
@@ -1014,7 +1081,7 @@ function WiggleCurveVisualizer({ wiggleAnalysis }) {
       {/* Visual Bar Chart */}
       {points.length > 0 && (
         <div className="mt-4 pt-3 pb-1 bg-line-soft/40 rounded-block px-3 border border-line">
-          <div className="flex items-center justify-between text-[11px] text-muted num mb-3">
+          <div className="flex items-center justify-between text-f11 text-muted num mb-3">
             <span className="font-semibold text-ink">Profit Factor Stability Curve</span>
             <span className="flex items-center gap-1.5 font-medium text-amber">
               <span className="w-2.5 h-0.5 bg-amber inline-block" />
@@ -1028,7 +1095,7 @@ function WiggleCurveVisualizer({ wiggleAnalysis }) {
               className="absolute left-0 right-0 border-b border-dashed border-amber/70 pointer-events-none z-10 flex items-center justify-end pr-1"
               style={{ bottom: `${Math.min(Math.max((1.30 / maxPf) * 100, 10), 90)}%` }}
             >
-              <span className="text-[9px] num font-semibold text-amber bg-card/90 px-1 rounded shadow-xs">
+              <span className="text-f9 num font-semibold text-amber bg-card/90 px-1 rounded shadow-xs">
                 1.30
               </span>
             </div>
@@ -1041,7 +1108,7 @@ function WiggleCurveVisualizer({ wiggleAnalysis }) {
 
               return (
                 <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end group relative">
-                  <span className="num text-[11px] font-semibold text-ink">
+                  <span className="num text-f11 font-semibold text-ink">
                     {pfVal.toFixed(2)}
                   </span>
                   <div className="w-full max-w-[42px] bg-line rounded-t-sm relative flex items-end h-full">
@@ -1055,7 +1122,7 @@ function WiggleCurveVisualizer({ wiggleAnalysis }) {
                     />
                   </div>
                   <div className="text-center">
-                    <span className={`block text-[10px] num leading-tight font-medium ${isBase ? 'text-ink font-bold' : 'text-muted'}`}>
+                    <span className={`block text-f10 num leading-tight font-medium ${isBase ? 'text-ink font-bold' : 'text-muted'}`}>
                       {pt.label}
                     </span>
                   </div>
@@ -1068,22 +1135,22 @@ function WiggleCurveVisualizer({ wiggleAnalysis }) {
 
       <div className="grid grid-cols-3 gap-2 text-center text-xs num py-2.5 mt-3 bg-line-soft/60 rounded-block">
         <div>
-          <span className="text-muted block text-[11px]">Baseline PF</span>
+          <span className="text-muted block text-f11">Baseline PF</span>
           <span className="font-bold text-ink">{baselinePf.toFixed(2)}</span>
         </div>
         <div>
-          <span className="text-muted block text-[11px]">Wiggle Range</span>
+          <span className="text-muted block text-f11">Wiggle Range</span>
           <span className="font-bold text-ink">[{minPf.toFixed(2)} – {maxPfVal.toFixed(2)}]</span>
         </div>
         <div>
-          <span className="text-muted block text-[11px]">Degradation</span>
+          <span className="text-muted block text-f11">Degradation</span>
           <span className={`font-bold ${degradation <= 25 ? 'text-green' : 'text-red'}`}>
             {degradation.toFixed(1)}%
           </span>
         </div>
       </div>
 
-      <p className="text-[11px] text-muted mt-2 leading-relaxed">
+      <p className="text-f11 text-muted mt-2 leading-relaxed">
         {isPlateau
           ? '✓ Broad parameter plateau confirmed. Edge does not evaporate when stop-loss or profit-target parameters shift ±20%.'
           : '⚠ Fragile peak / overfitted needle. Profit Factor collapses when parameters deviate ±20%. Strategy is vulnerable to regime change.'}
@@ -1112,7 +1179,7 @@ function GauntletChecklistExplorer({ checklist23 }) {
         <div>
           <div className="flex items-center gap-2">
             <Eyebrow>23-Point Gauntlet Checklist</Eyebrow>
-            <span className="chip text-[10px] font-bold bg-line-soft text-ink">
+            <span className="chip text-f10 font-bold bg-line-soft text-ink">
               {passesCount}/{totalCount} Passed
             </span>
           </div>
@@ -1159,9 +1226,9 @@ function GauntletChecklistExplorer({ checklist23 }) {
       <div className="mt-3 space-y-3">
         {filteredSections.map((sec) => (
           <div key={sec.id} className="space-y-1.5">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted px-1 flex items-center justify-between">
+            <div className="text-f11 font-bold uppercase tracking-wider text-muted px-1 flex items-center justify-between">
               <span>{sec.title}</span>
-              <span className="num text-[10px]">
+              <span className="num text-f10">
                 {sec.checks.filter((c) => c.passed).length}/{sec.checks.length} Pass
               </span>
             </div>
@@ -1178,7 +1245,7 @@ function GauntletChecklistExplorer({ checklist23 }) {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="num text-[11px] font-bold text-muted w-6">
+                      <span className="num text-f11 font-bold text-muted w-6">
                         #{chk.num < 10 ? `0${chk.num}` : chk.num}
                       </span>
                       <span className="text-xs font-semibold text-ink">
@@ -1186,7 +1253,7 @@ function GauntletChecklistExplorer({ checklist23 }) {
                       </span>
                     </div>
                     <span
-                      className={`chip text-[10px] font-bold ${
+                      className={`chip text-f10 font-bold ${
                         chk.passed
                           ? 'bg-green-soft text-green border-green'
                           : 'bg-amber-soft text-amber border-amber'
@@ -1197,7 +1264,7 @@ function GauntletChecklistExplorer({ checklist23 }) {
                   </div>
 
                   {(expanded || !chk.passed) && (
-                    <div className="mt-1.5 pl-8 text-[11px] text-ink-2 leading-relaxed bg-line-soft/30 py-1 px-2 rounded">
+                    <div className="mt-1.5 pl-8 text-f11 text-ink-2 leading-relaxed bg-line-soft/30 py-1 px-2 rounded">
                       {chk.detail}
                     </div>
                   )}
@@ -1253,7 +1320,7 @@ function TradeReplayLog({ trades = [] }) {
     <Card>
       <div className="flex items-center justify-between">
         <Eyebrow>Trade Replay Log ({positions.length} trades{trades.length !== positions.length ? `, ${trades.length} legs` : ''})</Eyebrow>
-        <div className="flex gap-1 text-[11px] num">
+        <div className="flex gap-1 text-f11 num">
           <button
             onClick={() => setFilter('ALL')}
             className={`px-2 py-0.5 rounded-pill ${filter === 'ALL' ? 'bg-ink text-paper' : 'bg-line-soft text-ink-2'}`}
@@ -1285,12 +1352,12 @@ function TradeReplayLog({ trades = [] }) {
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-ink">#{idx + 1}</span>
                   {isMultiLeg && (
-                    <span className="chip text-[9px] font-semibold px-1.5 py-0.5 bg-line-soft text-ink-2 border-line">
+                    <span className="chip text-f9 font-semibold px-1.5 py-0.5 bg-line-soft text-ink-2 border-line">
                       {legs.length} legs
                     </span>
                   )}
                   <span
-                    className={`chip text-[9px] font-semibold py-0.5 ${
+                    className={`chip text-f9 font-semibold py-0.5 ${
                       (pos.first.exit_reason || '').includes('Target')
                         ? 'bg-green-soft text-green border-green'
                         : (pos.first.exit_reason || '').includes('Stop')
@@ -1306,7 +1373,7 @@ function TradeReplayLog({ trades = [] }) {
                 </span>
               </div>
               {pos.capital_used > 0 && (
-                <span className="chip text-[9px] font-semibold bg-ai-soft text-ai border-ai px-1.5 py-0.5">
+                <span className="chip text-f9 font-semibold bg-ai-soft text-ai border-ai px-1.5 py-0.5">
                   Capital: {rupee(pos.capital_used)}
                 </span>
               )}
@@ -1335,7 +1402,7 @@ function LegRow({ t }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span
-            className={`chip text-[10px] font-bold px-1.5 py-0.5 ${
+            className={`chip text-f10 font-bold px-1.5 py-0.5 ${
               t.direction === 'PE'
                 ? 'bg-amber-soft text-amber border-amber'
                 : 'bg-ai-soft text-ai border-ai'
@@ -1344,18 +1411,18 @@ function LegRow({ t }) {
             {t.direction}
           </span>
           {t.symbol && (
-            <span className="font-semibold text-ink-2 text-[11px]">
+            <span className="font-semibold text-ink-2 text-f11">
               {t.symbol}
               {t.expiry && <span className="text-muted font-normal"> · exp {t.expiry}</span>}
             </span>
           )}
         </div>
-        <span className={`font-semibold text-[11px] ${pnlColor(t.net_pnl)}`}>
+        <span className={`font-semibold text-f11 ${pnlColor(t.net_pnl)}`}>
           {rupee(t.net_pnl, true)}
         </span>
       </div>
 
-      <div className="flex justify-between items-center text-[11px] text-muted">
+      <div className="flex justify-between items-center text-f11 text-muted">
         <span>
           {entryP.toFixed(2)} → {exitP.toFixed(2)}
           <span className={`ml-1.5 font-semibold ${ptsDiff >= 0 ? 'text-green' : 'text-red'}`}>
@@ -1364,7 +1431,7 @@ function LegRow({ t }) {
         </span>
       </div>
 
-      <div className="flex justify-between text-[10px] text-muted">
+      <div className="flex justify-between text-f10 text-muted">
         <span>
           {openDate && openTime && closeTime
             ? `${openDate} · ${openTime} → ${closeTime} IST`
@@ -1491,7 +1558,7 @@ export function Backtest({ liveJob } = {}) {
       <Card>
         <div className="flex items-center justify-between">
           <Eyebrow>23-Point Gauntlet Backtesting Lab</Eyebrow>
-          <span className="chip text-[10px] text-ai bg-ai-soft border-ai-soft">Check 01–23</span>
+          <span className="chip text-f10 text-ai bg-ai-soft border-ai-soft">Check 01–23</span>
         </div>
         <p className="text-body text-ink-2 mt-1.5">
           Replays real 1-minute OHLCV + option-chain OI/premium candles (IEA archive, 2021–present; falls back to on-demand DhanHQ for anything the archive doesn't cover). Evaluates honest slippage (Check 09) and parameter sensitivity (Check 17: Plateau vs Needle).
@@ -1512,7 +1579,7 @@ export function Backtest({ liveJob } = {}) {
                 <option value="FINNIFTY">FINNIFTY</option>
               </select>
               {inst !== 'NIFTY' && (
-                <p className="text-[10px] text-amber mt-1 leading-snug">
+                <p className="text-f10 text-amber mt-1 leading-snug">
                   Real archive covers NIFTY only — this index needs a live broker connection or will return NO_DATA.
                 </p>
               )}
@@ -1529,7 +1596,7 @@ export function Backtest({ liveJob } = {}) {
                 <option value="thunderbolt">Nifty Thunderbolt (1x2 Backspread)</option>
               </select>
               {strat === 'thunderbolt' && (
-                <p className="text-[10px] text-amber mt-1 leading-snug">
+                <p className="text-f10 text-amber mt-1 leading-snug">
                   Live order-flow signal — no historical order-book data exists, so this cannot be
                   backtested (running it will return a 0-trade result explaining why). Paper-trade
                   only, once the recorder is live during market hours.
@@ -1563,7 +1630,7 @@ export function Backtest({ liveJob } = {}) {
           {timelineMode === 'custom' && (
             <div className="grid grid-cols-2 gap-2 p-2.5 rounded-block bg-line/20 border border-line">
               <div>
-                <label className="text-[10px] uppercase font-bold text-muted block mb-1">From Date</label>
+                <label className="text-f10 uppercase font-bold text-muted block mb-1">From Date</label>
                 <input
                   type="date"
                   className="w-full rounded-block px-2.5 py-1.5 border border-line bg-card text-ink text-xs font-mono"
@@ -1572,7 +1639,7 @@ export function Backtest({ liveJob } = {}) {
                 />
               </div>
               <div>
-                <label className="text-[10px] uppercase font-bold text-muted block mb-1">To Date</label>
+                <label className="text-f10 uppercase font-bold text-muted block mb-1">To Date</label>
                 <input
                   type="date"
                   className="w-full rounded-block px-2.5 py-1.5 border border-line bg-card text-ink text-xs font-mono"
@@ -1654,7 +1721,7 @@ export function Backtest({ liveJob } = {}) {
                 <span className="chip font-bold text-xs bg-card border shadow-xs">
                   {res.checklist_23?.passes_count ?? (res.passes_checklist ? 23 : 19)}/23 PASSED
                 </span>
-                <div className="num text-[11px] text-muted mt-1 font-semibold">
+                <div className="num text-f11 text-muted mt-1 font-semibold">
                   PF {res.profit_factor}
                 </div>
               </div>
@@ -1678,9 +1745,9 @@ export function Backtest({ liveJob } = {}) {
               />
             </div>
 
-            <div className="mt-2.5 flex items-center justify-between text-[11px] text-muted italic">
+            <div className="mt-2.5 flex items-center justify-between text-f11 text-muted italic">
               <span>“7 ship. 993 die. The checklist is the executioner.”</span>
-              <span className="num not-italic text-[10px]">Doc RW/INCUB/2026-08</span>
+              <span className="num not-italic text-f10">Doc RW/INCUB/2026-08</span>
             </div>
           </div>
           )}
@@ -1698,11 +1765,11 @@ export function Backtest({ liveJob } = {}) {
                   : 'bg-amber'
               }`} />
               <span className="font-semibold">Data Provenance:</span>
-              <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-card border border-line">
+              <span className="font-mono text-f11 px-1.5 py-0.5 rounded bg-card border border-line">
                 {res.data_source || 'SYNTHETIC_MODEL'}
               </span>
             </div>
-            <span className="text-muted text-[11px]">
+            <span className="text-muted text-f11">
               {res.bars_evaluated ? `${res.bars_evaluated.toLocaleString()} bars replay` : `${res.days} days`}
             </span>
           </div>
@@ -1713,10 +1780,10 @@ export function Backtest({ liveJob } = {}) {
                 <div className="font-bold text-red flex items-center gap-2 text-sm">
                   <span>🔌</span> Broker Not Connected — Real Data Required
                 </div>
-                <p className="text-[12px] leading-relaxed text-ink">
+                <p className="text-xs leading-relaxed text-ink">
                   {res.data_warning}
                 </p>
-                <div className="text-[11px] text-muted">
+                <div className="text-f11 text-muted">
                   Go to <strong>System</strong> → configure <code>DHAN_CLIENT_ID</code> and <code>DHAN_ACCESS_TOKEN</code> in your <code>.env</code>, then restart the server.
                 </div>
               </div>
@@ -1725,7 +1792,7 @@ export function Backtest({ liveJob } = {}) {
                 <div className="font-bold flex items-center gap-1.5">
                   <span>⚠️</span> Edge Unverified on Real Market Data
                 </div>
-                <p className="text-[11px] leading-relaxed text-ink-2">
+                <p className="text-f11 leading-relaxed text-ink-2">
                   {res.data_warning}
                 </p>
               </div>
@@ -1745,38 +1812,38 @@ export function Backtest({ liveJob } = {}) {
                 </span>
               }
             />
-            <div className="text-[11px] text-muted num mt-0.5">
+            <div className="text-f11 text-muted num mt-0.5">
               Starting capital: {rupee(res.initial_capital)}
             </div>
 
             <div className="grid grid-cols-3 gap-2 text-center text-xs num py-3 mt-3 bg-line-soft rounded-block">
               <div>
-                <span className="text-muted block text-[11px]">Win %</span>
+                <span className="text-muted block text-f11">Win %</span>
                 <span className="font-semibold text-body">{res.win_pct}%</span>
               </div>
               <div>
-                <span className="text-muted block text-[11px]">Trades</span>
+                <span className="text-muted block text-f11">Trades</span>
                 <span className="font-semibold text-body">{res.total_trades} ({res.wins}W/{res.losses}L)</span>
               </div>
               <div>
-                <span className="text-muted block text-[11px]">Profit Factor</span>
+                <span className="text-muted block text-f11">Profit Factor</span>
                 <span className={`font-semibold text-body ${res.profit_factor >= 1.3 ? 'text-green' : 'text-ink'}`}>
-                  {res.profit_factor} <span className="text-[10px] text-muted font-normal">(≥1.3 req)</span>
+                  {res.profit_factor} <span className="text-f10 text-muted font-normal">(≥1.3 req)</span>
                 </span>
               </div>
             </div>
 
             <div className="grid grid-cols-3 gap-2 text-center text-xs num py-2 mt-2">
               <div>
-                <span className="text-muted block text-[11px]">Gross P&amp;L</span>
+                <span className="text-muted block text-f11">Gross P&amp;L</span>
                 <span className={pnlColor(res.gross_pnl)}>{rupee(res.gross_pnl, true)}</span>
               </div>
               <div>
-                <span className="text-muted block text-[11px]">Costs &amp; Slippage</span>
+                <span className="text-muted block text-f11">Costs &amp; Slippage</span>
                 <span className="text-muted">{rupee(res.total_costs)}</span>
               </div>
               <div>
-                <span className="text-muted block text-[11px]">Max Drawdown</span>
+                <span className="text-muted block text-f11">Max Drawdown</span>
                 <span className="text-red">{rupee(res.max_drawdown)}</span>
               </div>
             </div>
@@ -1787,7 +1854,7 @@ export function Backtest({ liveJob } = {}) {
             <Card>
               <Row
                 left={<Eyebrow>Equity Curve</Eyebrow>}
-                right={<span className="num text-[11px] text-muted">{res.trades.length} trades</span>}
+                right={<span className="num text-f11 text-muted">{res.trades.length} trades</span>}
               />
               <div className="mt-2">
                 <EquityCurve trades={res.trades} />
@@ -1800,7 +1867,7 @@ export function Backtest({ liveJob } = {}) {
             <Card>
               <Row
                 left={<Eyebrow>Session-by-Session P&amp;L</Eyebrow>}
-                right={<span className="num text-[11px] text-muted">{sessionItems.length} sessions</span>}
+                right={<span className="num text-f11 text-muted">{sessionItems.length} sessions</span>}
               />
               <div className="mt-2">
                 <MiniBars items={sessionItems} />
@@ -1834,10 +1901,10 @@ function BacktestProgressCard({ job, onCancel }) {
     <Card className="space-y-3">
       <Row
         left={<Eyebrow>Running Backtest</Eyebrow>}
-        right={<span className="chip text-[10px] bg-ai-soft text-ai border-ai-soft">{job?.phase || job?.status}</span>}
+        right={<span className="chip text-f10 bg-ai-soft text-ai border-ai-soft">{job?.phase || job?.status}</span>}
       />
       <ProgressRail pct={pct} tone="ai" />
-      <div className="flex items-center justify-between text-[11px] num text-muted">
+      <div className="flex items-center justify-between text-f11 num text-muted">
         <span>
           {total ? `Session ${done}/${total}` : 'Starting…'}
           {job?.session_date ? ` · ${job.session_date}` : ''}
@@ -1875,11 +1942,11 @@ function RunHistory({ history, onSelect, currentJobId }) {
                 row.id === currentJobId ? 'border-ai/40 bg-ai-soft/20' : 'border-line'
               } ${row.result ? 'hover:bg-line-soft cursor-pointer' : 'opacity-60 cursor-default'}`}
             >
-              <span className="text-[11px] num">
+              <span className="text-f11 num">
                 <span className="font-semibold text-ink">{row.strategy}</span>
                 <span className="text-muted"> · {row.instrument} · {range}</span>
               </span>
-              <span className={`text-[11px] num font-semibold ${tone}`}>
+              <span className={`text-f11 num font-semibold ${tone}`}>
                 {row.status}{row.result ? ` · PF ${row.result.profit_factor}` : ''}
               </span>
             </button>
@@ -1995,7 +2062,7 @@ export function DataScreen({ s, onRefresh }) {
               key={sym}
               left={<span className="font-disp font-semibold text-sec">{sym}</span>}
               right={
-                <span className={`chip text-[10px] ${fresh ? 'bg-green-soft text-green border-green' : 'bg-amber-soft text-amber border-amber'}`}>
+                <span className={`chip text-f10 ${fresh ? 'bg-green-soft text-green border-green' : 'bg-amber-soft text-amber border-amber'}`}>
                   {fresh ? 'Snapshot Fresh' : 'Stale Snapshot'}
                 </span>
               }
@@ -2016,7 +2083,7 @@ export function DataScreen({ s, onRefresh }) {
       <Card>
         <div className="flex items-center justify-between">
           <Eyebrow>DhanHQ Session &amp; 30-Day Token</Eyebrow>
-          <span className={`chip text-[10px] font-semibold ${
+          <span className={`chip text-f10 font-semibold ${
             dataStatus?.broker_authenticated
               ? 'bg-green-soft text-green border-green'
               : 'bg-red-soft text-red border-red animate-pulse'
@@ -2032,7 +2099,7 @@ export function DataScreen({ s, onRefresh }) {
         {dataStatus?.broker_auth_error && (
           <div className="mt-2.5 p-2.5 rounded-block bg-amber-soft border border-amber text-xs text-amber space-y-0.5">
             <span className="font-bold">Last Broker Response:</span>
-            <div className="font-mono text-[11px] opacity-90">{dataStatus.broker_auth_error}</div>
+            <div className="font-mono text-f11 opacity-90">{dataStatus.broker_auth_error}</div>
           </div>
         )}
 
@@ -2105,7 +2172,7 @@ export function DataScreen({ s, onRefresh }) {
             <div key={st.name} className="border-b border-line last:border-0 pb-3 last:pb-0">
               <div className="font-semibold text-xs text-ink mb-1.5">{st.display_name || st.name.replace(/_/g, ' ').toUpperCase()}</div>
               {st.dependency_health ? (
-                <div className="flex flex-wrap gap-1.5 text-[11px] num">
+                <div className="flex flex-wrap gap-1.5 text-f11 num">
                   {Object.entries(st.dependency_health.symbols || {}).map(([sym, status]) => (
                     <span key={sym} className={`px-2 py-0.5 rounded-pill border ${
                       status === 'OK' ? 'bg-green-soft text-green border-green-soft' :
@@ -2140,7 +2207,7 @@ export function DataScreen({ s, onRefresh }) {
 
 /* ---------------------------------------------------------------- System */
 
-export function System({ s, onKill, onEnablePush, pushState, onOpenConfig, onOpenJournal, onRefresh }) {
+export function System({ s, onKill, onEnablePush, pushState, onOpenConfig, onRefresh }) {
   const [typed, setTyped] = useState('');
   const on = s.kill_switch === 'ON';
   return (
@@ -2196,6 +2263,12 @@ export function System({ s, onKill, onEnablePush, pushState, onOpenConfig, onOpe
           Session {s.fsm?.session_date} · violations today {s.violations_today ?? 0}
           {s.week_locked && <span className="text-red font-semibold"> · WEEK LOCKED</span>}
         </div>
+        <p className="text-sec text-muted mt-3 pt-3 border-t border-line leading-relaxed">
+          Mode is set at boot. Change{' '}
+          <code className="num bg-well px-1 py-0.5 rounded text-f11">IS_LIVE</code> in{' '}
+          <code className="num bg-well px-1 py-0.5 rounded text-f11">.env</code> and restart the
+          backend to switch.
+        </p>
       </Card>
 
       {/* Notifications */}
@@ -2209,16 +2282,6 @@ export function System({ s, onKill, onEnablePush, pushState, onOpenConfig, onOpe
         </button>
       </Card>
 
-      {/* Trading Journal */}
-      <Card>
-        <Eyebrow>Trading Journal &amp; Day-End Reports</Eyebrow>
-        <p className="text-body text-ink-2 mt-2">
-          Review historical daily P&amp;L reports, violations log, and closed trade analytics.
-        </p>
-        <button className="btn-ghost mt-3" onClick={onOpenJournal}>
-          Read Day-End Report &amp; Journal
-        </button>
-      </Card>
     </div>
   );
 }
@@ -2249,7 +2312,7 @@ export function DayEnd() {
     api.getDayEnd().then(setR).catch((e) => setErr(e.message));
   }, []);
   if (err) return <Card><Empty>{err}</Empty></Card>;
-  if (!r) return <Card><Empty>Loading…</Empty></Card>;
+  if (!r) return <SkeletonCard rows={4} />;
   const v = r.verdict || {};
   return (
     <div className="space-y-cardgap">
@@ -2268,31 +2331,20 @@ export function DayEnd() {
         </div>
       </Card>
 
-      <Card>
-        <Eyebrow>Executed Trades ({r.replay?.length || 0})</Eyebrow>
-        {(r.replay || []).length === 0 ? (
-          <Empty>No trades executed today.</Empty>
-        ) : (
-          <div className="mt-3 space-y-3">
-            {r.replay.map((t, i) => (
-              <div key={i} className="p-3 rounded-block bg-line/30 border border-line/60 space-y-1.5">
-                <div className="flex justify-between items-center font-disp font-semibold text-sec">
-                  <span>{t.symbol}</span>
-                  <span className={pnlColor(t.net)}>{rupee(t.net, true)}</span>
-                </div>
-                <div className="num text-sec text-muted flex justify-between">
-                  <span>BUY @ ₹{t.entry} → SELL @ ₹{t.exit}</span>
-                  <span>Gross: {rupee(t.gross, true)}</span>
-                </div>
-                <div className="num text-ai text-muted flex justify-between text-xs pt-1 border-t border-line/40">
-                  <span>Origin: {t.origin} ({t.reason || 'manual'})</span>
-                  <span>Charges: {rupee(t.costs)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+      <ClosedTradesTable
+        title={`Executed · ${r.date}`}
+        rows={(r.replay || []).map((t, i) => ({
+          id: i,
+          closed_at: t.closed_at,
+          symbol: t.symbol,
+          entry: t.entry,
+          exit: t.exit,
+          reason: t.reason || t.origin,
+          costs: t.costs,
+          pnl: t.net,
+        }))}
+        empty="No trades executed."
+      />
 
       <Card>
         <Eyebrow>Suggested vs taken</Eyebrow>

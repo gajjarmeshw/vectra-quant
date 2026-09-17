@@ -1,21 +1,118 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Home, Zap, FlaskConical, Database, Settings, Ghost } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Home, Zap, FlaskConical, Database, Settings, FileText, Wifi, WifiOff } from 'lucide-react';
+import { motion } from 'framer-motion';
 import * as api from './api.js';
-import { Banner, StateChip } from './components.jsx';
+import { Banner, StateChip, num, pnlColor, useFlash } from './components.jsx';
+import AmbientField from './ambient.jsx';
 import {
-  DayEnd, Journal, Locked, Positions, Signals, System, Today,
-  Strategies, Backtest, DataScreen, PaperTrading
+  Locked, Positions, Signals, System, Today,
+  Strategies, Backtest, DataScreen, Reports
 } from './screens.jsx';
 
+/* One destination per job-to-be-done. `Paper` used to re-render the whole of
+   Home (duplicate P&L, premarket and closed orders); mode now lives in the
+   sidebar + System, and reports/history consolidate into Reports. */
 const TABS = [
-  { id: 'home', label: 'Home', icon: Home },
-  { id: 'paper', label: 'Paper', icon: Ghost },
-  { id: 'trade', label: 'Trade', icon: Zap },
-  { id: 'backtest', label: 'Backtest', icon: FlaskConical },
-  { id: 'data', label: 'Data', icon: Database },
-  { id: 'settings', label: 'System', icon: Settings },
+  { id: 'home', label: 'Home', icon: Home, title: 'Today' },
+  { id: 'trade', label: 'Trade', icon: Zap, title: 'Trade' },
+  { id: 'backtest', label: 'Backtest', icon: FlaskConical, title: 'Backtest' },
+  { id: 'reports', label: 'Reports', icon: FileText, title: 'Reports & History' },
+  { id: 'data', label: 'Data', icon: Database, title: 'Market Data' },
+  { id: 'settings', label: 'System', icon: Settings, title: 'System' },
 ];
+
+const TICKERS = [
+  { key: 'NIFTY', label: 'NIFTY', digits: 0 },
+  { key: 'SENSEX', label: 'SENSEX', digits: 0 },
+  { key: 'INDIAVIX', label: 'INDIA VIX', digits: 2 },
+];
+
+/* One ticker cell — flashes green/red the instant its price ticks, so a
+   change is noticeable without staring at the strip. */
+function TickerCell({ label, quote = {}, digits }) {
+  const ltp = quote.ltp == null ? null : Number(quote.ltp);
+  const flash = useFlash(ltp);
+  const ch = quote.change_pct;
+  const up = ch > 0;
+  return (
+    <div className="ticker-cell py-2 flex-1 md:flex-none justify-center md:justify-start">
+      <span className="eyebrow">{label}</span>
+      <span className={`num text-sec font-medium text-ink rounded px-1 -mx-0.5 ${flash}`}>
+        {ltp == null ? '—' : ltp.toLocaleString('en-IN', { maximumFractionDigits: digits })}
+      </span>
+      <span className={`num text-eyebrow ${pnlColor(ch)}`}>
+        {ch == null ? '' : `${up ? '▲' : ch < 0 ? '▼' : ''}${Math.abs(num(ch, 2))}%`}
+      </span>
+    </div>
+  );
+}
+
+/* Always-visible market strip — the one thing a trading console should never
+   make you navigate to find. */
+function TickerStrip({ market = {} }) {
+  return (
+    <div className="flex items-stretch overflow-x-auto no-scrollbar w-full md:w-auto">
+      {TICKERS.map(({ key, label, digits }) => (
+        <TickerCell key={key} label={label} quote={market[key] || {}} digits={digits} />
+      ))}
+    </div>
+  );
+}
+
+function ConnDot({ conn, healthy }) {
+  const ok = conn === 'connected' && healthy;
+  const Icon = conn === 'error' ? WifiOff : Wifi;
+  const tone = conn === 'error' ? 'text-red' : ok ? 'text-green' : 'text-amber';
+  return (
+    <span className={`inline-flex items-center gap-1.5 num text-eyebrow ${tone}`} title={`socket: ${conn}`}>
+      <Icon size={12} strokeWidth={2.4} />
+      {conn === 'connected' ? 'LIVE' : conn === 'error' ? 'OFFLINE' : 'SYNCING'}
+    </span>
+  );
+}
+
+function Clock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <span className="num text-eyebrow text-muted tabular-nums">
+      {now.toLocaleTimeString('en-IN', {
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false, timeZone: 'Asia/Kolkata',
+      })} IST
+    </span>
+  );
+}
+
+function Brand({ healthy, compact = false }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div
+        className="w-7 h-7 rounded-lg grid place-items-center shrink-0"
+        style={{ background: 'linear-gradient(135deg,#4D8DFF,#2B6BE0)', boxShadow: '0 0 16px -4px rgba(77,141,255,0.6)' }}
+      >
+        <span className="font-disp text-white text-f13 font-bold">V</span>
+      </div>
+      {!compact && (
+        <div className="min-w-0">
+          <div className="font-disp text-brand font-bold text-ink leading-none">VECTRA</div>
+          <div className="eyebrow mt-1">QUANT TERMINAL</div>
+        </div>
+      )}
+      <span
+        className="w-1.5 h-1.5 rounded-full shrink-0"
+        style={
+          healthy
+            ? { background: '#00D98B', boxShadow: '0 0 8px rgba(0,217,139,0.7)' }
+            : { background: '#FF4D5E', boxShadow: '0 0 8px rgba(255,77,94,0.7)' }
+        }
+      />
+    </div>
+  );
+}
 
 export default function App() {
   const [tab, setTab] = useState('home');
@@ -24,7 +121,6 @@ export default function App() {
   const [busy, setBusy] = useState('');
   const [toast, setToast] = useState('');
   const [pushState, setPushState] = useState('');
-  const [showDayEnd, setShowDayEnd] = useState(false);
   const [btJob, setBtJob] = useState(null);
   const closeRef = useRef(null);
 
@@ -42,8 +138,6 @@ export default function App() {
     }
   }, [flash]);
 
-  // Push survives relaunches; the button label did not. Ask the browser what the
-  // real state is, and re-register with the server while we are here.
   useEffect(() => {
     api.pushStatus().then((s) => s && setPushState(s));
   }, []);
@@ -53,9 +147,6 @@ export default function App() {
     closeRef.current = api.liveSocket(
       (payload) => {
         setConn('connected');
-        // Every /live frame carries a `type` discriminator now — full account
-        // snapshots are 'state'; other types (e.g. backtest progress) are handled
-        // by their own listeners and must not be treated as a state snapshot.
         if (!payload?.type || payload.type === 'state') {
           setState(payload);
         } else if (payload.type === 'backtest') {
@@ -64,7 +155,6 @@ export default function App() {
       },
       (s) => setConn(s),
     );
-    // Polling backstop: if the socket is wedged, the console must not go stale.
     const t = setInterval(refresh, 15000);
     return () => {
       closeRef.current?.();
@@ -134,214 +224,213 @@ export default function App() {
   };
 
   if (!state) {
-    // Terminal screen: the tab bar has not rendered yet, so this must say what is
-    // wrong and offer the one action that can fix it.
     return (
       <div className="min-h-screen grid place-items-center px-gutter">
         <div className="text-center max-w-xs">
-          <img src="/logo.svg" alt="" width="56" height="56" className="mx-auto opacity-90" />
-          <div className="num text-sec text-muted mt-4">
-            {conn === 'error' ? 'Backend unreachable' : 'Connecting to VECTRA_QUANT…'}
+          <div
+            className="w-12 h-12 rounded-xl grid place-items-center mx-auto"
+            style={{ background: 'linear-gradient(135deg,#4D8DFF,#2B6BE0)', boxShadow: '0 0 28px -6px rgba(77,141,255,0.7)' }}
+          >
+            <span className="font-disp text-white text-xl font-bold">V</span>
           </div>
-          {toast && <div className="num text-eyebrow text-red mt-2">{toast}</div>}
-          <button className="btn-ghost mt-6" onClick={refresh}>
-            Retry
-          </button>
+          <div className="font-disp text-brand font-bold text-ink mt-4">VECTRA QUANT</div>
+          <div className="num text-eyebrow text-muted mt-2">
+            {conn === 'error' ? 'BACKEND UNREACHABLE' : 'CONNECTING…'}
+          </div>
+          {toast && <div className="num text-eyebrow text-red mt-3">{toast}</div>}
+          <button className="btn-ghost mt-6" onClick={refresh}>Retry</button>
         </div>
       </div>
     );
   }
 
   const locked = state.fsm?.state === 'LOCKED';
-  const healthy =
-    state.kill_switch === 'ON' && !state.health?.feed_degraded && conn !== 'error';
+  const healthy = state.kill_switch === 'ON' && !state.health?.feed_degraded && conn !== 'error';
+  const activeTab = TABS.find((t) => t.id === tab) || TABS[0];
+
+  const go = (id) => {
+    setTab(id);
+  };
 
   return (
     <div className="min-h-screen bg-paper flex flex-col md:flex-row">
-      {/* Mobile Tab Bar */}
-      <nav className="md:hidden tabbar w-full flex justify-around items-center px-2 z-40 bg-card border-t border-line">
+      <AmbientField />
+
+      {/* ---------- Mobile bottom tab bar ---------- */}
+      {/* Six equal columns rather than fixed-width buttons — on a 360px phone
+          the old w-14 pills left the row lopsided and under the 44px touch
+          target. */}
+      <nav className="md:hidden tabbar flex items-stretch z-40">
         {TABS.map((t) => {
           const active = tab === t.id;
           const Icon = t.icon;
           return (
             <button
               key={t.id}
-              onClick={() => {
-                setTab(t.id);
-                setShowDayEnd(false);
-              }}
-              className="relative flex flex-col items-center gap-1 px-1 py-2 shrink-0 w-16"
+              onClick={() => go(t.id)}
+              aria-label={t.title}
+              aria-current={active ? 'page' : undefined}
+              className="relative flex-1 min-w-0 flex flex-col items-center justify-center gap-1 px-0.5 py-2"
             >
-              <div className="relative">
-                <Icon 
-                  size={22} 
-                  strokeWidth={active ? 2.5 : 2} 
-                  className={`transition-colors duration-200 ${active ? 'text-ink' : 'text-muted'}`} 
-                />
-                {active && (
-                  <motion.div 
-                    layoutId="tab-indicator-mobile"
-                    className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-ink"
-                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                  />
-                )}
-              </div>
+              <Icon
+                size={20}
+                strokeWidth={active ? 2.5 : 2}
+                className={`transition-colors ${active ? 'text-ai' : 'text-muted'}`}
+              />
               <span
-                className={`num font-medium tracking-wide transition-colors ${
+                className={`num w-full text-center truncate transition-colors ${
                   active ? 'text-ink' : 'text-muted'
                 }`}
-                style={{ fontSize: '10px' }}
+                style={{ fontSize: '9.5px', letterSpacing: '0.04em' }}
               >
-                {t.label}
+                {t.label.toUpperCase()}
               </span>
+              {active && (
+                <motion.div
+                  layoutId="tab-indicator-mobile"
+                  className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-7 h-[2px] rounded-full bg-ai"
+                  style={{ boxShadow: '0 0 10px rgba(77,141,255,0.8)' }}
+                  transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+                />
+              )}
             </button>
           );
         })}
       </nav>
 
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 border-r border-line bg-card shrink-0">
-        <div className="p-6">
-          <div className="font-disp text-ink font-bold tracking-tight flex items-center gap-2 text-xl">
-            <div className="w-8 h-8 rounded-full bg-ai grid place-items-center shadow-lg">
-              <span className="text-white text-[15px]">S</span>
-            </div>
-            VECTRA_QUANT
-            <span
-              className="inline-block w-2 h-2 rounded-full ml-1"
-              style={
-                healthy
-                  ? { background: '#10B981', boxShadow: '0 0 8px rgba(16,185,129,0.4)' }
-                  : { background: '#EF4444', boxShadow: '0 0 8px rgba(239,68,68,0.4)' }
-              }
-            />
-          </div>
+      {/* ---------- Desktop sidebar ---------- */}
+      <aside className="relative z-20 hidden md:flex flex-col w-56 border-r border-line bg-card/70 backdrop-blur-xl shrink-0 h-screen sticky top-0">
+        <div className="px-4 py-5 border-b border-line">
+          <Brand healthy={healthy} />
         </div>
-        <nav className="flex-1 px-4 space-y-2 mt-4">
+
+        <nav className="flex-1 px-2.5 py-3 space-y-0.5 overflow-y-auto">
           {TABS.map((t) => {
             const active = tab === t.id;
             const Icon = t.icon;
             return (
               <button
                 key={t.id}
-                onClick={() => {
-                  setTab(t.id);
-                  setShowDayEnd(false);
-                }}
-                className={`relative flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all duration-200 ${
-                  active ? 'bg-line-soft text-ink font-semibold' : 'text-muted hover:text-ink hover:bg-line-soft/50'
+                onClick={() => go(t.id)}
+                className={`relative flex items-center gap-2.5 w-full px-3 py-2 rounded-block transition-colors duration-150 ${
+                  active ? 'bg-card-2 text-ink' : 'text-ink-2 hover:text-ink hover:bg-card-2/60'
                 }`}
               >
-                <Icon size={20} strokeWidth={active ? 2.5 : 2} />
-                <span className="font-disp tracking-wide">{t.label}</span>
+                <Icon size={16} strokeWidth={active ? 2.4 : 2} className={active ? 'text-ai' : ''} />
+                <span className="font-disp text-btn font-medium">{t.label}</span>
                 {active && (
-                  <motion.div 
+                  <motion.div
                     layoutId="tab-indicator-desktop"
-                    className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-ink"
-                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                    className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-ai"
+                    style={{ boxShadow: '0 0 10px rgba(77,141,255,0.8)' }}
+                    transition={{ type: 'spring', stiffness: 320, damping: 26 }}
                   />
                 )}
               </button>
             );
           })}
         </nav>
+
+        <div className="px-4 py-3 border-t border-line space-y-2">
+          <div className="flex items-center justify-between">
+            <ConnDot conn={conn} healthy={healthy} />
+            <span className={`num text-eyebrow ${state.mode === 'LIVE' ? 'text-red' : 'text-ink-2'}`}>
+              {state.mode || 'PAPER'}
+            </span>
+          </div>
+          <Clock />
+        </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto pb-24 md:pb-0">
-        <header className="md:hidden flex items-center justify-between px-gutter pt-6 pb-4">
-          <div className="font-disp text-ink font-bold tracking-tight flex items-center gap-2 text-xl">
-            <div className="w-8 h-8 rounded-full bg-ai grid place-items-center shadow-lg">
-              <span className="text-white text-[15px]">S</span>
+      {/* ---------- Main ---------- */}
+      <div className="relative z-10 flex-1 flex flex-col min-w-0 h-screen overflow-y-auto pb-24 md:pb-0">
+        {/* sticky command bar: ticker + state, both platforms */}
+        <div className="sticky top-0 z-30 bg-paper/70 backdrop-blur-xl border-b border-line">
+          <div className="md:hidden flex items-center justify-between px-gutter pt-3 pb-2">
+            <Brand healthy={healthy} compact />
+            <div className="flex items-center gap-2">
+              <ConnDot conn={conn} healthy={healthy} />
+              <StateChip state={state.fsm?.state} />
             </div>
-            VECTRA_QUANT
-            <span
-              className="inline-block w-2 h-2 rounded-full ml-1"
-              style={
-                healthy
-                  ? { background: '#10B981', boxShadow: '0 0 8px rgba(16,185,129,0.4)' }
-                  : { background: '#EF4444', boxShadow: '0 0 8px rgba(239,68,68,0.4)' }
-              }
-            />
           </div>
-          <StateChip state={state.fsm?.state} floor={state.fsm?.floor} />
-        </header>
 
-        <div className="hidden md:flex items-center justify-end px-8 pt-6 pb-2 border-b border-line/50 mb-6 sticky top-0 bg-paper/80 backdrop-blur-md z-30">
-          <StateChip state={state.fsm?.state} floor={state.fsm?.floor} />
+          <div className="flex items-center justify-between gap-4 md:px-6">
+            <TickerStrip market={state.market} />
+            <div className="hidden md:flex items-center gap-3 shrink-0 pr-1">
+              <Clock />
+              <StateChip state={state.fsm?.state} />
+            </div>
+          </div>
         </div>
 
-        <main className="px-gutter md:px-12 w-full max-w-6xl space-y-cardgap pb-12">
-          {conn === 'reconnecting' && (
-            <div className="num text-eyebrow text-center py-1 bg-amber-soft text-amber rounded mb-4">
-              reconnecting…
-            </div>
-          )}
-          {toast && <Banner tone="ink">{toast}</Banner>}
+        <main className="px-gutter md:px-6 w-full max-w-[1560px] mx-auto py-4 md:py-6">
+          {/* Where am I / what session. The phone only ever showed the logo, so
+              the screen name had to be inferred from the tab bar. */}
+          <div className="flex items-baseline justify-between gap-3 mb-3 md:mb-5">
+            <h1 className="font-disp text-contract font-semibold text-ink tracking-tight truncate">
+              {activeTab.title}
+            </h1>
+            <span className="num text-eyebrow text-muted shrink-0">
+              SESSION {state.session_date || '—'}
+            </span>
+          </div>
 
-        {showDayEnd ? (
-          <>
-            <button className="btn-ghost" onClick={() => setShowDayEnd(false)}>
-              ← Back
-            </button>
-            <DayEnd />
-          </>
-        ) : (
-          <div className="relative">
-            <div className={tab === 'home' ? 'block animate-in fade-in slide-in-from-bottom-2 duration-300' : 'hidden'}>
-              <div className="space-y-cardgap">
-                {locked ? (
-                  <Locked s={state} onReadReport={() => setShowDayEnd(true)} />
-                ) : (
-                  <Today s={state} onSquareOff={onSquareOff} onReadReport={() => setShowDayEnd(true)} />
-                )}
-                <div className="pt-4 border-t border-line">
-                  <h3 className="font-disp font-semibold text-lg text-ink mb-3 px-1">Active Positions</h3>
-                  <Positions s={state} onSquareOff={onSquareOff} busy={busy === 'squareoff'} />
+          <div className="space-y-cardgap">
+            {conn === 'reconnecting' && <Banner tone="amber">RECONNECTING…</Banner>}
+            {toast && <Banner tone="ink">{toast}</Banner>}
+
+            <div className="relative">
+                <div className={tab === 'home' ? 'block animate-in fade-in slide-in-from-bottom-1 duration-200' : 'hidden'}>
+                  {/* Dashboard grid: the day's state on the left, live risk
+                      pinned in a right rail that stays put while you scroll. */}
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 items-start">
+                    <div className="xl:col-span-2 space-y-cardgap min-w-0">
+                      {locked ? (
+                        <Locked s={state} onReadReport={() => go('reports')} />
+                      ) : (
+                        <Today s={state} onSquareOff={onSquareOff} />
+                      )}
+                    </div>
+                    <div className="space-y-cardgap min-w-0 xl:sticky xl:top-[104px]">
+                      <Positions s={state} onSquareOff={onSquareOff} busy={busy === 'squareoff'} />
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-            
-            <div className={tab === 'paper' ? 'block animate-in fade-in slide-in-from-bottom-2 duration-300' : 'hidden'}>
-              <div className="space-y-cardgap">
-                <PaperTrading s={state} onSquareOff={onSquareOff} busy={busy === 'squareoff'} />
-              </div>
-            </div>
 
-            <div className={tab === 'trade' ? 'block animate-in fade-in slide-in-from-bottom-2 duration-300' : 'hidden'}>
-              <div className="space-y-cardgap">
-                <Signals s={state} onApprove={onApprove} onReject={onReject} busy={busy} />
-                <div className="pt-4 border-t border-line">
-                  <h3 className="font-disp font-semibold text-lg text-ink mb-3 px-1">Algo Strategies</h3>
-                  <Strategies s={state} onRefresh={refresh} />
+                <div className={tab === 'reports' ? 'block animate-in fade-in slide-in-from-bottom-1 duration-200' : 'hidden'}>
+                  <Reports />
                 </div>
-              </div>
-            </div>
 
-            <div className={tab === 'backtest' ? 'block animate-in fade-in slide-in-from-bottom-2 duration-300' : 'hidden'}>
-              <div className="space-y-cardgap">
-                <Backtest s={state} liveJob={btJob} />
-              </div>
-            </div>
+                <div className={tab === 'trade' ? 'block animate-in fade-in slide-in-from-bottom-1 duration-200' : 'hidden'}>
+                  <div className="grid grid-cols-1 xl:grid-cols-5 gap-3 items-start">
+                    <div className="xl:col-span-2 space-y-cardgap min-w-0 xl:sticky xl:top-[104px]">
+                      <Signals s={state} onApprove={onApprove} onReject={onReject} busy={busy} />
+                    </div>
+                    <div className="xl:col-span-3 space-y-cardgap min-w-0">
+                      <Strategies s={state} onRefresh={refresh} />
+                    </div>
+                  </div>
+                </div>
 
-            <div className={tab === 'data' ? 'block animate-in fade-in slide-in-from-bottom-2 duration-300' : 'hidden'}>
-              <div className="space-y-cardgap">
-                <DataScreen s={state} onRefresh={refresh} />
-              </div>
-            </div>
+                <div className={tab === 'backtest' ? 'block animate-in fade-in slide-in-from-bottom-1 duration-200' : 'hidden'}>
+                  <Backtest s={state} liveJob={btJob} />
+                </div>
 
-            <div className={tab === 'settings' ? 'block animate-in fade-in slide-in-from-bottom-2 duration-300' : 'hidden'}>
-              <System
-                s={state}
-                onKill={onKill}
-                onEnablePush={onEnablePush}
-                pushState={pushState}
-                onOpenJournal={() => setShowDayEnd(true)}
-                onRefresh={refresh}
-              />
+                <div className={tab === 'data' ? 'block animate-in fade-in slide-in-from-bottom-1 duration-200' : 'hidden'}>
+                  <DataScreen s={state} onRefresh={refresh} />
+                </div>
+
+                <div className={tab === 'settings' ? 'block animate-in fade-in slide-in-from-bottom-1 duration-200' : 'hidden'}>
+                  <System
+                    s={state}
+                    onKill={onKill}
+                    onEnablePush={onEnablePush}
+                    pushState={pushState}
+                    onRefresh={refresh}
+                  />
+                </div>
             </div>
           </div>
-        )}
         </main>
       </div>
     </div>
