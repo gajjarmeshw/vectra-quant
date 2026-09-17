@@ -26,6 +26,12 @@ from vectra_quant.risk_engine import DayState, RiskConfig, RiskEngine, TradeResu
 from vectra_quant.strategies.base import BaseStrategy, StrategyContext
 from vectra_quant.strategies.registry import get_strategy
 
+# Minimum real open interest on the entry (offset-0) strike to trust its
+# quoted premium. Real NIFTY weekly chains observed in the archive run
+# roughly 900 (deep OTM) to 13M (heavy ATM/ITM) OI; this floor only rejects
+# the genuinely illiquid tail, not normal ATM/near strikes.
+MIN_ENTRY_OI = 100_000.0
+
 INDEX_LOT_SIZES = {
     "NIFTY": 65,
     "BANKNIFTY": 30,
@@ -94,8 +100,9 @@ class BacktestTrade:
     strategy_name: str = ""
     slippage_cost: float = 0.0
     instrument_details: str = ""   # e.g. "SELL 25000 PE / BUY 24500 PE"
-    capital_used: float = 0.0      # margin blocked for this trade
+    capital_used: float = 0.0      # margin blocked for this POSITION (only set on the first leg — see position_id)
     expiry: str = ""               # the option contract's expiry date (YYYY-MM-DD), when known
+    position_id: str = ""          # shared by every leg of one entry/exit event — group on this, not on `id`
 
 
 @dataclass
@@ -638,15 +645,14 @@ class BacktestEngine:
                             net_spread_pnl += net
                             is_win = net > 0
 
-                            # Determine capital used
-                            if leg["action"] == "SELL":
-                                cap_used = 40000.0 * (leg_qty / INDEX_LOT_SIZES.get(inst, 1))
-                            else:
-                                cap_used = leg["option_entry"] * leg_qty
+                            # Real position margin (computed once at entry) is reported on the
+                            # first leg only — it's a single margin call for the whole spread,
+                            # not per-leg, so summing legs must not double-count it.
+                            cap_used = trade_position_margin if i == 0 else 0.0
 
                             trades.append(
                                 BacktestTrade(
-                                    id=f"{str(uuid.uuid4())[:8]}_L{i+1}",
+                                    id=f"{trade_position_id}_L{i+1}",
                                     symbol=leg["symbol"],
                                     instrument=inst,
                                     direction=leg["dir"],
@@ -664,6 +670,7 @@ class BacktestEngine:
                                     slippage_cost=round(trade_slip + (entry_slippage_pts * leg_qty), 2),
                                     capital_used=round(cap_used, 2),
                                     expiry=session_expiry,
+                                    position_id=trade_position_id,
                                 )
                             )
 
@@ -711,11 +718,27 @@ class BacktestEngine:
 
                     if signal_legs:
                         decision = engine.can_enter(bar_dt, confidence=signal_confidence)
-                        if decision.allowed:
+                        atm_strike = round(bar.close / strike_step) * strike_step
+
+                        # Liquidity gate on the main (offset-0) leg: real chain
+                        # data only — a strike with near-zero open interest is
+                        # often a stale/unfillable print, not a real market, so
+                        # trading it would price the position off a number
+                        # nobody could actually deal at. Strategies with no
+                        # real chain data for this day (opt_index is None) are
+                        # not gated — there's nothing real to check against.
+                        liquidity_ok = True
+                        if decision.allowed and opt_index is not None:
+                            main_leg = next((lg for lg in signal_legs if lg.get("strike_offset", 0) == 0), signal_legs[0])
+                            main_bar = opt_index.nearest_bar(atm_strike, main_leg.get("direction", "CE"), bar_dt)
+                            if main_bar is not None and main_bar["oi"] < MIN_ENTRY_OI:
+                                liquidity_ok = False
+
+                        if decision.allowed and liquidity_ok:
                             in_trade = True
                             trade_open_ts = f"{date_str} {bar_time.strftime('%H:%M')}"
                             trade_spot_entry = bar.close
-                            
+
                             net_credit = 0.0
                             net_debit = 0.0
 
@@ -724,10 +747,26 @@ class BacktestEngine:
                                 leg_action = leg.get("action", "BUY")
                                 offset = leg.get("strike_offset", 0)
                                 qty_ratio = leg.get("qty_ratio", 1.0)
-                                
-                                atm_strike = round(bar.close / strike_step) * strike_step
-                                strike_val = atm_strike + offset
-                                
+
+                                # OI-wall hedge selection: instead of a fixed
+                                # point distance, scan real strikes in the
+                                # hedge direction and place the hedge at the
+                                # one carrying the most open interest — an
+                                # actual market-positioned level, not a round
+                                # number. Falls back to the static offset when
+                                # there's no real chain (opt_index is None) or
+                                # no strike in range has any OI.
+                                if leg.get("strike_offset_mode") == "oi_wall" and opt_index is not None:
+                                    direction_sign = 1 if offset > 0 else -1
+                                    wall_strike = opt_index.oi_wall_strike(
+                                        atm_strike, leg_dir, bar_dt, direction_sign, strike_step,
+                                        min_offset=leg.get("oi_wall_min_offset", 100.0),
+                                        max_offset=leg.get("oi_wall_max_offset", 500.0),
+                                    )
+                                    strike_val = wall_strike if wall_strike is not None else (atm_strike + offset)
+                                else:
+                                    strike_val = atm_strike + offset
+
                                 leg_symbol = f"{inst} {int(strike_val)} {leg_dir}"
                                 
                                 real_entry_bar = opt_index.nearest_bar(strike_val, leg_dir, bar_dt) if opt_index is not None else None
@@ -758,7 +797,25 @@ class BacktestEngine:
                                 })
 
                             net_cash_flow = net_credit - net_debit
-                            
+                            trade_position_id = str(uuid.uuid4())[:8]
+
+                            # Real defined-risk margin, computed ONCE per position (not per leg —
+                            # a broker margins the spread, not each leg separately). For a credit
+                            # spread it's (strike width - net credit); for a single long leg it's
+                            # simply the premium paid; for a naked short (no hedge) it falls back
+                            # to the net credit received as a conservative stand-in.
+                            # Real resolved strikes (post OI-wall selection), not the
+                            # strategy's nominal offsets — a dynamic hedge can land at
+                            # a different width than the static fallback implies.
+                            resolved_strikes = [leg["strike"] for leg in trade_legs]
+                            spread_width_pts = (max(resolved_strikes) - min(resolved_strikes)) if len(resolved_strikes) > 1 else 0.0
+                            if spread_width_pts > 0:
+                                trade_position_margin = max(0.0, (spread_width_pts * lot_size) - net_cash_flow)
+                            elif trade_legs[0]["action"] == "BUY":
+                                trade_position_margin = trade_legs[0]["option_entry"] * lot_size
+                            else:
+                                trade_position_margin = abs(net_cash_flow)
+
                             if push_mode:
                                 push_sl_pct = p.get("sl_pct_premium", 0.0) if p else 0.0
                                 push_tgt_rr = p.get("target_rr_mult", 0.0) if p else 0.0
@@ -811,9 +868,20 @@ class BacktestEngine:
         start_d = dates_sorted[0] if dates_sorted else ""
         end_d = dates_sorted[-1] if dates_sorted else ""
 
-        win_pct = (wins / len(trades) * 100.0) if trades else 0.0
-        gross_wins = sum(t.net_pnl for t in trades if t.net_pnl > 0)
-        gross_losses = abs(sum(t.net_pnl for t in trades if t.net_pnl < 0))
+        # Score at POSITION level, not leg level — a 2-4 leg spread must count
+        # as one trade. `trades` holds one row per leg; group by position_id
+        # (falls back to grouping by id when absent, e.g. old cached results)
+        # before computing anything a human reads as "per trade".
+        positions_by_id: dict[str, float] = {}
+        for t in trades:
+            key = t.position_id or t.id
+            positions_by_id[key] = positions_by_id.get(key, 0.0) + t.net_pnl
+        position_nets = list(positions_by_id.values())
+        total_positions = len(position_nets)
+
+        win_pct = (wins / total_positions * 100.0) if total_positions else 0.0
+        gross_wins = sum(n for n in position_nets if n > 0)
+        gross_losses = abs(sum(n for n in position_nets if n < 0))
         profit_factor = (gross_wins / gross_losses) if gross_losses > 0 else (gross_wins if gross_wins else 0.0)
 
         # -------------------------------------------------------------
@@ -825,7 +893,7 @@ class BacktestEngine:
 
         chk_pf = profit_factor >= 1.3
         chk_dd = max_drawdown <= (self.risk_cfg.capital * 0.25)
-        chk_trades = len(trades) >= 3
+        chk_trades = total_positions >= 3
 
         section_c_passed = chk_pf and chk_dd and chk_trades
 
@@ -895,7 +963,7 @@ class BacktestEngine:
                     "checks": [
                         {"num": 14, "name": "Profit Factor Above 1.3", "passed": chk_pf, "detail": f"Profit Factor: {round(profit_factor, 2)} (Required: >= 1.30)"},
                         {"num": 15, "name": "Tolerable Max Drawdown", "passed": chk_dd, "detail": f"Max DD: ₹{round(max_drawdown, 2)} ({round(max_drawdown / self.risk_cfg.capital * 100, 1)}% of capital)"},
-                        {"num": 16, "name": "Sample Size", "passed": chk_trades, "detail": f"{len(trades)} trades executed in simulation window"},
+                        {"num": 16, "name": "Sample Size", "passed": chk_trades, "detail": f"{total_positions} trades executed in simulation window ({len(trades)} legs)"},
                         {"num": 17, "name": "Parameter Wiggle Test", "passed": True, "detail": "Edge stability evaluated across ±20% parameter movement"},
                         {"num": 18, "name": "Session-by-Session Consistency", "passed": consistency_passed, "detail": f"{profitable_sessions}/{total_sessions} sessions closed green"},
                     ],
@@ -950,7 +1018,7 @@ class BacktestEngine:
             final_pnl=total_realized,
             gross_pnl=total_gross,
             total_costs=total_costs,
-            total_trades=len(trades),
+            total_trades=total_positions,
             wins=wins,
             losses=losses,
             win_pct=win_pct,

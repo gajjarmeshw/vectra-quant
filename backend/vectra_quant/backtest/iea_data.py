@@ -120,6 +120,38 @@ def _load_chunk(symbol: str, path_str: str) -> dict[str, list[Candle]]:
     return by_day
 
 
+def _load_chunks_in_range(symbol: str, from_date: str | None, to_date: str | None) -> dict[str, list[Candle]]:
+    """Shared range-loading logic for any symbol directory in the archive
+    (index or a named futures contract) — only opens overlapping chunks."""
+    chunks = _chunk_files(symbol)
+    if not chunks:
+        return {}
+    lo = from_date or chunks[0][0]
+    hi = to_date or chunks[-1][1]
+    selected = [p for (cs, ce, p) in chunks if ce >= lo and cs <= hi]
+
+    by_day: dict[str, list[Candle]] = {}
+    for p in selected:
+        by_day.update(_load_chunk(symbol, str(p)))
+    return {k: v for k, v in by_day.items() if lo <= k <= hi}
+
+
+def load_futures_contract_window(
+    contract_symbol: str, from_date: str | None = None, to_date: str | None = None
+) -> dict[str, list[Candle]]:
+    """Real 1m candles for one NAMED futures contract (e.g. 'NIFTY-Sep2026-FUT').
+
+    Unlike `load_index_window`, this is not restricted to the underlying
+    index — it reads whatever contract directory exists in the archive.
+    Used only for basis validation (see `futures_engine.measure_futures_basis`):
+    the archive holds NO expired-futures history, only whichever contracts
+    happened to be live during the backfill window, so this can never be
+    the primary data source for a futures backtest — only a way to measure
+    how far a synthesized index-proxy fill would have been from a real one.
+    """
+    return _load_chunks_in_range(contract_symbol.upper(), from_date, to_date)
+
+
 def load_index_window(
     symbol: str,
     from_date: str | None = None,
@@ -135,20 +167,13 @@ def load_index_window(
     symbol = symbol.upper()
     if symbol not in _SUPPORTED_INDEX_SYMBOLS:
         return {}
+
+    if from_date or to_date:
+        return _load_chunks_in_range(symbol, from_date, to_date)
+
     chunks = _chunk_files(symbol)
     if not chunks:
         return {}
-
-    if from_date or to_date:
-        lo = from_date or chunks[0][0]
-        hi = to_date or chunks[-1][1]
-        selected = [p for (cs, ce, p) in chunks if ce >= lo and cs <= hi]
-
-        by_day: dict[str, list[Candle]] = {}
-        for p in selected:
-            by_day.update(_load_chunk(symbol, str(p)))
-        by_day = {k: v for k, v in by_day.items() if lo <= k <= hi}
-        return by_day
 
     # No explicit range — return the most recent `tail_sessions` real trading
     # sessions. Chunks are ~quarterly but the newest one is only ever
@@ -238,7 +263,7 @@ class OptionDayIndex:
         is_call = df["right"].astype(str).str.upper().str.startswith("C")
         for (strike, call), g in df.groupby([df["strike"].astype(float), is_call], sort=False):
             ts_arr = g["ts"].to_numpy(dtype="datetime64[ns]")
-            vals = g[["open", "high", "low", "close", "oi"]].to_numpy(dtype="float64")
+            vals = g[["open", "high", "low", "close", "oi", "volume", "iv"]].to_numpy(dtype="float64")
             self._by_key[(float(strike), bool(call))] = (ts_arr, vals)
 
         oi_by_ts = df.groupby("ts")["oi"].sum().sort_index()
@@ -264,7 +289,30 @@ class OptionDayIndex:
         if len(ts_arr) == 0:
             return None
         row = vals[self._nearest_idx(ts_arr, at)]
-        return {"open": row[0], "high": row[1], "low": row[2], "close": row[3], "oi": row[4]}
+        return {"open": row[0], "high": row[1], "low": row[2], "close": row[3], "oi": row[4], "volume": row[5], "iv": row[6]}
+
+    def oi_wall_strike(self, atm_strike: float, right: str, at: datetime,
+                        direction_sign: int, strike_step: float,
+                        min_offset: float, max_offset: float,
+                        min_oi: float = 0.0) -> float | None:
+        """Real-data hedge-strike picker: scan strikes from `min_offset` to
+        `max_offset` away from ATM (in `direction_sign`, +1 above/-1 below)
+        and return the one with the highest open interest — the actual OI
+        "wall" the market has built at, rather than a fixed point distance.
+        Returns None if no candidate strike has chain data (caller should
+        fall back to a static offset).
+        """
+        best_strike = None
+        best_oi = -1.0
+        offset = min_offset
+        while offset <= max_offset + 1e-6:
+            strike = atm_strike + direction_sign * offset
+            bar = self.nearest_bar(strike, right, at)
+            if bar is not None and bar["oi"] >= min_oi and bar["oi"] > best_oi:
+                best_oi = bar["oi"]
+                best_strike = strike
+            offset += strike_step
+        return best_strike
 
     def nearest_total_oi(self, at: datetime) -> float | None:
         """Total (CE+PE) open interest across the whole chain nearest to `at`."""
