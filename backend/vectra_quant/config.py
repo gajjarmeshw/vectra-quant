@@ -137,17 +137,6 @@ class GuardianCfg:
 
 
 @dataclass(frozen=True)
-class LLMCfg:
-    min_conf: int = 70
-    suggest_cap_per_day: int = 10
-    timeout_s: int = 10
-    bridge_retries: int = 2
-    bridge_url: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
-    groq_fallback_model: str = "openai/gpt-oss-120b"
-
-
-@dataclass(frozen=True)
 class WeekCfg:
     loss_limit_mult: float = 2.5
     red_days_to_paper: int = 3
@@ -170,7 +159,7 @@ class InstrumentsCfg:
 @dataclass(frozen=True)
 class AlgoCfg:
     enabled: bool = True
-    active_strategies: list[str] = field(default_factory=lambda: ["institutional_breakout"])
+    active_strategies: list[str] = field(default_factory=list)
     auto_execute: bool = False
 
 
@@ -181,7 +170,6 @@ class Settings:
     sizing: SizingCfg
     data: DataCfg
     guardian: GuardianCfg
-    llm: LLMCfg
     week: WeekCfg
     events: EventsCfg
     instruments: InstrumentsCfg
@@ -298,15 +286,7 @@ def _build(raw: dict[str, Any], secrets: Secrets) -> Settings:
             squareoff_verify_s=int((raw.get("guardian") or {}).get("squareoff_verify_s", 10)),
             yield_to_manual_sl=bool((raw.get("guardian") or {}).get("yield_to_manual_sl", True)),
         ),
-        llm=LLMCfg(
-            min_conf=int(llm.get("min_conf", 70)),
-            suggest_cap_per_day=int(llm.get("suggest_cap_per_day", 10)),
-            timeout_s=int(llm.get("timeout_s", 10)),
-            bridge_retries=int(llm.get("bridge_retries", 2)),
-            bridge_url=bridge_url,
-            groq_model=str(llm.get("groq_model", "llama-3.3-70b-versatile")),
-            groq_fallback_model=str(llm.get("groq_fallback_model", "openai/gpt-oss-120b")),
-        ),
+
         week=WeekCfg(
             loss_limit_mult=float((raw.get("week") or {}).get("loss_limit_mult", 2.5)),
             red_days_to_paper=int((raw.get("week") or {}).get("red_days_to_paper", 3)),
@@ -324,7 +304,7 @@ def _build(raw: dict[str, Any], secrets: Secrets) -> Settings:
         secrets=secrets,
         algo=AlgoCfg(
             enabled=bool((raw.get("algo") or {}).get("enabled", True)),
-            active_strategies=list((raw.get("algo") or {}).get("active_strategies", ["institutional_breakout"])),
+            active_strategies=list((raw.get("algo") or {}).get("active_strategies", [])),
             auto_execute=bool((raw.get("algo") or {}).get("auto_execute", False)),
         ),
         broker_name=str(os.getenv("BROKER_NAME") or raw.get("broker") or "dhan").lower(),

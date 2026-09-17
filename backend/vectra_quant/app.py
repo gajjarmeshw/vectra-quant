@@ -60,9 +60,14 @@ def build_broker(settings: Any):
 
     broker_name = getattr(settings, "broker_name", "dhan").lower()
     if broker_name == "groww":
-        from vectra_quant.brokers.groww import GrowwAdapter
-        log.info("Selected broker adapter: Groww")
-        live = GrowwAdapter(settings.secrets.groww_api_key, settings.secrets.groww_totp_seed)
+        # brokers/groww.py does not exist in this codebase -- only Dhan is
+        # actually implemented. This used to fail with a raw
+        # ModuleNotFoundError deep inside broker selection; fail clearly
+        # instead so a misconfigured BROKER_NAME is obvious at boot.
+        raise RuntimeError(
+            "BROKER_NAME=groww is not implemented in this codebase (no brokers/groww.py). "
+            "Set BROKER_NAME=dhan (the only working adapter) in .env."
+        )
     else:
         from vectra_quant.brokers.dhan import DhanAdapter
         log.info("Selected broker adapter: DhanHQ")
@@ -83,6 +88,25 @@ def create_app() -> FastAPI:
     logging_setup.setup()
     settings = config_mod.get()
     db.init_db()
+
+    # A LIVE-mode boot with no real shared secret means every endpoint that
+    # can place orders, refresh the broker token, or rewrite .env is
+    # reachable by anyone who can reach the port -- and a wildcard CORS
+    # origin combined with allow_credentials=True is either silently
+    # ineffective or a real cross-origin credential leak depending on the
+    # browser. Both are cheap to misconfigure by just not setting env vars,
+    # so both fail the boot loudly here rather than running open silently.
+    if settings.is_live:
+        if not settings.secrets.api_shared_secret or settings.secrets.api_shared_secret == "dev-insecure":
+            raise RuntimeError(
+                "Refusing to start in LIVE mode with no real API_SHARED_SECRET set. "
+                "Set a strong, unique value for API_SHARED_SECRET before going live."
+            )
+        if settings.secrets.pwa_origin == "*":
+            raise RuntimeError(
+                "Refusing to start in LIVE mode with PWA_ORIGIN unset (defaults to '*'). "
+                "Set PWA_ORIGIN to your actual frontend origin before going live."
+            )
 
     app = FastAPI(title="VECTRA_QUANT", version="1.0", docs_url=None, redoc_url=None)
     app.add_middleware(
@@ -429,16 +453,40 @@ def _every_nth(st: Any, key: str, n: int) -> bool:
 
 
 def _tick_recon(st: Any) -> None:
-    from vectra_quant.brokers.recon import Reconciler
-    if not hasattr(st, "recon"):
-        st.recon = Reconciler(st.broker)
-    result = st.recon.run_once()
-    if not result.has_critical:
+    """Broker-vs-internal-state reconciliation.
+
+    `vectra_quant.brokers.recon.Reconciler` (what this used to import) has
+    been removed from the codebase -- that import was silently failing on
+    every tick (caught by `_job()`'s blanket except), so reconciliation had
+    been dead with no alert since whenever that module was deleted. This
+    reimplements the comparison directly against the same broker call
+    guardian.py's flatness check uses (`get_positions()`), rather than
+    reintroducing a second, divergent implementation.
+    """
+    try:
+        broker_positions = st.broker.get_positions()
+    except Exception as exc:  # noqa: BLE001 -- a broken broker call must not kill the scheduler loop
+        log.error("reconciliation: could not fetch broker positions", extra={"error": str(exc)[:200]})
+        return
+
+    broker_qty: dict[str, int] = {}
+    for p in broker_positions:
+        broker_qty[p.trading_symbol] = broker_qty.get(p.trading_symbol, 0) + p.quantity
+
+    internal_qty: dict[str, int] = {}
+    for t in st.lifecycle.open_trades():
+        internal_qty[t.trading_symbol] = internal_qty.get(t.trading_symbol, 0) + t.qty
+
+    symbols = set(broker_qty) | set(internal_qty)
+    discrepancies = {sym for sym in symbols if broker_qty.get(sym, 0) != internal_qty.get(sym, 0)}
+
+    if not discrepancies:
         st.recon_alerted = set()
         return
+
     # Alert once per distinct discrepancy, not every 15s forever.
     seen = getattr(st, "recon_alerted", set())
-    fresh = {f"{d.kind}:{d.symbol}" for d in result.discrepancies if d.critical} - seen
+    fresh = discrepancies - seen
     if fresh:
         st.recon_alerted = seen | fresh
         st.pusher.system(f"Reconciliation mismatch: {'; '.join(sorted(fresh)[:3])}")
@@ -591,7 +639,7 @@ def _dispatch(st: Any, ev: Any) -> None:
             from vectra_quant.strategies.base import StrategyContext
             from vectra_quant.strategies.registry import get_strategy
 
-            active_strats = getattr(st.settings.algo, "active_strategies", ["institutional_breakout"])
+            active_strats = getattr(st.settings.algo, "active_strategies", [])
             
             fii_lean = "FLAT"
             try:
@@ -628,6 +676,22 @@ def _dispatch(st: Any, ev: Any) -> None:
             for s_name in active_strats:
                 try:
                     strat = get_strategy(s_name)
+                except Exception as exc:
+                    log.exception("Could not load strategy %s: %s", s_name, exc)
+                    continue
+
+                exec_mode = getattr(type(strat), "EXECUTION_MODE", "standard")
+                if exec_mode != "standard":
+                    # Strategies with a non-tick execution model (multi-day
+                    # option structures, or a strategy driven off its own
+                    # live order-flow process) deliberately raise
+                    # NotImplementedError from evaluate() -- calling it here
+                    # every tick would just be a permanent, silent exception
+                    # storm. They run through their own dedicated path
+                    # instead (weekly_spread_engine / run_thunderbolt_live.py).
+                    continue
+
+                try:
                     sig = strat.evaluate(ctx)
                     if sig:
                         gate, queued = st.lifecycle.apply_gates(

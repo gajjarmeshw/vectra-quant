@@ -174,7 +174,7 @@ def test_sell_leg_is_not_a_new_trade(setup):
 def test_manual_trade_while_locked_logs_violation(setup):
     g, _b, engine, _a = setup
     engine.on_trade_opened()
-    engine.on_trade_closed.__self__.on_pnl_tick(-1050.0)   # force LOCKED
+    engine.on_trade_closed.__self__.on_pnl_tick(-6000.0)   # force LOCKED (loss_limit at capital=120000)
     assert engine.state == DayState.LOCKED
     g.on_order_event(manual_fill())
     with session() as s:

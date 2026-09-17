@@ -5,6 +5,7 @@
       "name": "sentinel-pwa",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
+      "cwd": "pwa",
       "port": 5173
     }
   ]

@@ -52,19 +52,21 @@ def test_pnl_tick_drives_state_and_persists_curve(cfg):
 
 
 def test_net_pnl_feeds_fsm_not_gross(cfg):
-    """FSM must trade on money kept, so callers pass net. 1500 net -> EARNED."""
+    """FSM must trade on money kept, so callers pass net. EARNED needs
+    realized >= bonus_at_pct_target * target = 0.45 * 9600 = 4320 at the
+    current capital=120000 default -- 5000 net clears that with margin."""
     o = Orchestrator(cfg)
     o.on_trade_opened()
-    snap = o.on_trade_closed(1500.0)
+    snap = o.on_trade_closed(5000.0)
     assert snap.state == DayState.EARNED.value
-    assert snap.floor == 1500 * 0.70
+    assert snap.floor == 5000 * 0.70
 
 
 def test_loss_limit_lock_emits_square_off(cfg):
     events = []
     o = Orchestrator(cfg, on_engine_event=lambda ev, sn: events.append(ev))
     o.on_trade_opened()
-    snap = o.on_pnl_tick(-1050.0)
+    snap = o.on_pnl_tick(-6000.0)  # loss_limit = capital * loss_limit_pct = 120000 * 0.05
     assert snap.state == DayState.LOCKED.value
     assert events and events[0].square_off
 
@@ -75,7 +77,7 @@ def test_state_change_hook_fires_once_per_change(cfg):
     o.on_trade_opened()
     o.on_pnl_tick(100.0)
     o.on_pnl_tick(120.0)          # no state or floor change
-    o.on_trade_closed(1500.0)     # -> EARNED
+    o.on_trade_closed(5000.0)     # -> EARNED (>= 4320 at capital=120000)
     assert changes.count(DayState.EARNED.value) == 1
 
 
@@ -164,8 +166,8 @@ def test_week_lock_at_2_5x_loss_limit(cfg):
     idempotent behaviour for a live process closing the same day twice."""
     o = Orchestrator(cfg, week_loss_limit_mult=2.5)
     assert not o.week_locked
-    # 2.5 x 1050 = 2625
-    for day, pnl in (("2026-08-03", -1000.0), ("2026-08-04", -1000.0)):
+    # week_loss_limit = 2.5 x loss_limit = 2.5 x 6000 (capital=120000) = 15000
+    for day, pnl in (("2026-08-03", -5000.0), ("2026-08-04", -5000.0)):
         o.reset_day()
         o.session_date = day
         o.on_trade_opened(); o.on_trade_closed(pnl)
@@ -173,7 +175,7 @@ def test_week_lock_at_2_5x_loss_limit(cfg):
 
     o.reset_day()
     o.session_date = "2026-08-05"
-    o.on_trade_opened(); o.on_trade_closed(-700.0)   # cumulative -2700
+    o.on_trade_opened(); o.on_trade_closed(-5001.0)   # cumulative -15001, breaches 15000
     assert o.week_locked
     with session() as s:
         assert s.query(Violation).filter(Violation.kind == "WEEK_LOCK").count() == 1
@@ -213,8 +215,10 @@ def test_green_day_resets_red_streak(cfg):
 def test_floor_distance_drives_warning(cfg):
     o = Orchestrator(cfg)
     o.on_trade_opened()
-    o.on_trade_closed(1500.0)       # floor 1050, dayPnL 1500
-    assert o.floor_distance() == 450.0
+    o.on_trade_closed(1500.0)       # dayPnL 1500 never crosses EARNED (needs >= 4320
+                                     # at capital=120000) or PROTECT (>= 9600), so the
+                                     # floor stays at its initial -loss_limit (-6000)
+    assert o.floor_distance() == 7500.0
 
 
 def test_kill_switch_toggle_reaches_engine(cfg):

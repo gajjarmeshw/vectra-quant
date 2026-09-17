@@ -144,7 +144,8 @@ class RenkoSignalEngine:
     def evaluate_candle(self, renko: pd.DataFrame,
                         position: RenkoPositionContext | None = None,
                         current_ts: datetime | None = None,
-                        volume_ok: bool = True) -> RenkoDecision:
+                        volume_ok: bool = True,
+                        min_trend_strength_mult: float = 0.0) -> RenkoDecision:
         if renko is None or len(renko) < 3:
             return self._hold(rr_armed=bool(position.rr_armed) if position else False)
 
@@ -155,6 +156,7 @@ class RenkoSignalEngine:
         color = str(cur["color"])
         ema21 = float(cur["ema21"])
         ema44 = float(cur["ema44"])
+        box_size = float(cur["box_size"])
 
         if position is not None:
             return self._evaluate_exit(position, c, color, ema21, ema44)
@@ -174,16 +176,26 @@ class RenkoSignalEngine:
 
         # Filter 3: Volume confirmation (passed in from caller)
         # Filter 4: Cooldown check
+        # Filter 5: Regime gate — EMA21/44 separation vs box_size (ATR-scaled)
+        # as a trend-strength proxy. A flat/choppy tape has ema21≈ema44, so
+        # a minimum separation stands the strategy aside from the trades that
+        # are pure box-flip noise rather than a real directional move.
+        regime_ok = (
+            min_trend_strength_mult <= 0.0
+            or abs(ema21 - ema44) >= box_size * min_trend_strength_mult
+        )
         long_entry = (
             ce_trend
             and ce_momentum
             and volume_ok
+            and regime_ok
             and (current_ts is None or self._cooldown_ok("LONG", current_ts))
         )
         short_entry = (
             pe_trend
             and pe_momentum
             and volume_ok
+            and regime_ok
             and (current_ts is None or self._cooldown_ok("SHORT", current_ts))
         )
 
@@ -281,6 +293,9 @@ class DynamicRenkoStrategy(BaseStrategy):
         "cooldown_min": 30,         # minutes before same-direction re-entry
         "min_consecutive_bricks": 2, # required same-color brick run for entry
         "volume_sma_len": 20,       # volume SMA lookback for filter
+        "min_trend_strength_mult": 0.0,  # regime gate: |ema21-ema44| >= box_size * this (0 = off)
+        "oi_wall_min_offset": 100.0,  # hedge OI-wall scan: nearest strike to consider
+        "oi_wall_max_offset": 500.0,  # hedge OI-wall scan: farthest strike to consider
     }
 
     def __init__(self, params=None):
@@ -471,6 +486,7 @@ class DynamicRenkoStrategy(BaseStrategy):
             self.active_trade_context,
             current_ts=now_dt,
             volume_ok=volume_ok,
+            min_trend_strength_mult=float(self.params.get("min_trend_strength_mult", 0.0)),
         )
 
         if self.active_trade_context:
@@ -497,11 +513,23 @@ class DynamicRenkoStrategy(BaseStrategy):
                 stop_underlying=decision.stop_underlying,
             )
 
-            # Credit Spread: Sell ATM, Buy 300 pts OTM as hedge
-            hedge_offset = -300 if direction == "PE" else 300
+            # Credit Spread: Sell ATM, Buy the real OI-wall strike as hedge.
+            # The hedge used to sit at a fixed 300 pts regardless of market
+            # structure; now it's placed at the strike carrying the most real
+            # open interest within [oi_wall_min_offset, oi_wall_max_offset] —
+            # an actual level the market has positioned around — falling back
+            # to the static 300 only when no real chain data exists that day.
+            hedge_sign = -1 if direction == "PE" else 1
+            hedge_fallback_offset = hedge_sign * 300
             legs = [
                 {"direction": direction, "action": "SELL", "strike_offset": 0, "qty_ratio": 1.0},
-                {"direction": direction, "action": "BUY", "strike_offset": hedge_offset, "qty_ratio": 1.0},
+                {
+                    "direction": direction, "action": "BUY",
+                    "strike_offset": hedge_fallback_offset, "qty_ratio": 1.0,
+                    "strike_offset_mode": "oi_wall",
+                    "oi_wall_min_offset": float(self.params.get("oi_wall_min_offset", 100.0)),
+                    "oi_wall_max_offset": float(self.params.get("oi_wall_max_offset", 500.0)),
+                },
             ]
 
             self._emit_signal(

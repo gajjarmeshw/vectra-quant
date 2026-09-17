@@ -215,7 +215,7 @@ def test_gates_reject_thin_rr(stack):
 def test_gates_reject_when_locked(stack):
     lc, _b, orch = stack
     orch.on_trade_opened()
-    orch.on_pnl_tick(-1050.0)
+    orch.on_pnl_tick(-6000.0)  # loss_limit at capital=120000
     gate, _q = lc.apply_gates(_payload(), spot=78800, is_expiry_day=False)
     assert not gate.passed
 
@@ -247,7 +247,7 @@ def test_approve_revalidates_at_tap_time(stack):
     lc.enqueue(q)
     # Day blows up between card and tap.
     orch.on_trade_opened()
-    orch.on_pnl_tick(-1050.0)
+    orch.on_pnl_tick(-6000.0)  # loss_limit at capital=120000
     out = lc.approve(q.id)
     assert not out["ok"] and "tap time" in out["error"]
     assert broker.placed == [], "no order may reach the broker after a lock"
@@ -467,13 +467,16 @@ def test_over_risk_card_can_actually_be_approved(stack):
     tap time, contradicting 'one lot is always allowed, just flagged'."""
     lc, broker, orch = stack
     lc.fill_wait_s = 0
-    orch.on_trade_opened(); orch.on_trade_closed(2500.0)      # -> PROTECT, r/2 = 600
+    orch.on_trade_opened(); orch.on_trade_closed(10000.0)     # -> PROTECT (>= target 9600 at capital=120000)
+    # halved risk budget = risk_scale_protected(0.5) x risk_per_trade(capital x
+    # risk_per_trade_pct = 120000 x 0.025 = 3000) = 1500. mid=330, sl=250 ->
+    # 80pts x lot 20 = 1600 risk, which exceeds it; tgt=460 keeps RR = 130/80 = 1.625 >= 1.5.
     gate, q = lc.apply_gates(
         _payload(confidence=85, entry_zone={"low": 320, "high": 340},
-                 stop_loss_premium=290, target_premium=420, risk_reward=2.0),
+                 stop_loss_premium=250, target_premium=460, risk_reward=1.625),
         spot=78800, is_expiry_day=False)
     assert gate.passed, gate.reason
-    assert q.over_risk, "20 x 45pts = 900 risk exceeds the halved 600"
+    assert q.over_risk, "20 x 80pts = 1600 risk exceeds the halved 1500"
     lc.enqueue(q)
     out = lc.approve(q.id)
     assert out["ok"], f"over_risk card must be approvable, got: {out.get('error')}"

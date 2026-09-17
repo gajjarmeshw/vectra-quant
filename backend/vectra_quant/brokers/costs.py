@@ -28,6 +28,22 @@ class CostRates:
     stamp_duty_buy_pct: float = 0.00003  # Rs.300 per crore, buy side only
 
 
+# NSE equity-derivatives FUTURES rates (post the 2023 STT hike) — materially
+# cheaper than options per rupee of turnover, which is exactly why the
+# credit-spread wrapper was found to be destroying a real signal edge (see
+# backtest/research.py): 0.02% futures STT vs 0.1% options STT is a 5x
+# difference before anything else is counted.
+FUTURES_COST_RATES = CostRates(
+    brokerage_per_order=20.0,
+    stt_sell_pct=0.0002,           # 0.02% of sell-side turnover (futures, not premium)
+    exchange_txn_pct_nse=0.0000173,  # ~Rs.1.73 per lakh, NSE futures
+    exchange_txn_pct_bse=0.0000375,
+    sebi_turnover_pct=0.000001,
+    gst_pct=0.18,
+    stamp_duty_buy_pct=0.00002,    # 0.002% of buy-side turnover (futures)
+)
+
+
 @dataclass(frozen=True)
 class LegCost:
     turnover: float

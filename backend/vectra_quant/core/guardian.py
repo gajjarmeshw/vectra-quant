@@ -13,6 +13,7 @@ wins; `_seen` dedupes by broker order id so a trade is never counted twice.
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -474,21 +475,41 @@ class Guardian:
             self.alert("SYSTEM", f"SQUARE-OFF FAILED: {str(exc)[:120]}", {"reason": reason})
             return [], False
 
-        from vectra_quant.brokers.recon import Reconciler
-        flat = Reconciler(self.broker).verify_flat(timeout_s=self.squareoff_verify_s)
+        def _is_flat():
+            # This runs inside the emergency kill path -- any failure here
+            # (including a broken broker call) must fail safe as "not flat"
+            # rather than crash out of the retry/alert logic below.
+            try:
+                pos = self.broker.get_positions()
+                return sum(abs(p.quantity) for p in pos) == 0
+            except Exception as exc:  # noqa: BLE001
+                log.error("square-off flatness check failed", extra={"error": str(exc)[:200]})
+                return False
+
+        flat = False
+        for _ in range(self.squareoff_verify_s):
+            if _is_flat():
+                flat = True
+                break
+            time.sleep(1.0)
+            
         if not flat:
             log.error("retrying square-off — still not flat")
             try:
                 ids += self.broker.square_off_all()
             except BrokerError as exc:
                 log.error("square-off retry failed", extra={"error": str(exc)[:200]})
-            flat = Reconciler(self.broker).verify_flat(timeout_s=self.squareoff_verify_s)
-
-        if not flat:
-            self.alert("SYSTEM", (
-                "CRITICAL: not flat after square-off and one retry. "
-                "Exit manually in the Groww app now."
-            ), {"reason": reason})
+                
+            for _ in range(self.squareoff_verify_s):
+                if _is_flat():
+                    flat = True
+                    break
+                time.sleep(1.0)
+            if not flat:
+                self.alert("SYSTEM", (
+                    "CRITICAL: not flat after square-off and one retry. "
+                    "Exit manually in the Groww app now."
+                ), {"reason": reason})
         with self._lock:
             self._pending_sl.clear()
         return ids, flat

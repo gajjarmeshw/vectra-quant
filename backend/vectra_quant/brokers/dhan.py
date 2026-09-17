@@ -468,18 +468,30 @@ class DhanAdapter:
             idx_ids = [int(DHAN_INDEX_SECURITY_MAP[s.upper()]["security_id"]) for s in symbols if s.upper() in DHAN_INDEX_SECURITY_MAP]
             if idx_ids:
                 resp = self.dhan.ticker_data({"IDX_I": idx_ids})
-                data_map = resp.get("data", {}) if isinstance(resp, dict) else {}
-                for sym in symbols:
-                    meta = DHAN_INDEX_SECURITY_MAP.get(sym.upper())
-                    if meta:
-                        sid = meta["security_id"]
-                        val = data_map.get(sid, {})
-                        if val and float(val.get("last_price", 0.0)) > 0:
-                            out[sym] = float(val.get("last_price", 0.0))
+                # Observed live shapes:
+                #   failure: {"status": "failure", "data": ""}            -- "data" is a string
+                #   success: {"status": "success", "data":
+                #              {"data": {"IDX_I": {"<sid>": {"last_price": ...}}}, "status": "success"}}
+                # i.e. the SDK wraps the raw HTTP body under "data" again, and the
+                # per-security entries sit two levels deeper under the exchange
+                # segment key. A prior version read `resp["data"][sid]` directly,
+                # which is wrong even on a successful response, so index LTPs
+                # (VIX in particular) silently always fell through to the
+                # candle fallback below instead.
+                outer = resp.get("data") if isinstance(resp, dict) else None
+                segment_map = outer.get("data", {}).get("IDX_I", {}) if isinstance(outer, dict) else {}
+                if isinstance(segment_map, dict):
+                    for sym in symbols:
+                        meta = DHAN_INDEX_SECURITY_MAP.get(sym.upper())
+                        if meta:
+                            sid = meta["security_id"]
+                            val = segment_map.get(sid, {})
+                            if val and float(val.get("last_price", 0.0)) > 0:
+                                out[sym] = float(val.get("last_price", 0.0))
         except Exception as e:
             log.warning("Dhan ticker_data failed for %s: %s", symbols, e)
 
-        # Fallback to get_candles for any missing symbols
+        # Fallback 1: recent 1-minute candles.
         for sym in symbols:
             if sym not in out:
                 try:
@@ -488,6 +500,19 @@ class DhanAdapter:
                         out[sym] = bars[-1].close
                 except Exception as fallback_e:
                     log.warning("Dhan get_candles fallback failed for %s: %s", sym, fallback_e)
+
+        # Fallback 2: 1-minute intraday history has proven unreliable for index
+        # symbols specifically (returns 0 bars intermittently, cause unconfirmed);
+        # daily candles have not, so try those before giving up and returning 0.0.
+        for sym in symbols:
+            if sym not in out:
+                try:
+                    bars = self.get_candles(sym, "1d", span=3)
+                    if bars:
+                        out[sym] = bars[-1].close
+                        log.info("Dhan get_ltp_batch: used daily-candle fallback for %s", sym)
+                except Exception as fallback_e:
+                    log.warning("Dhan daily-candle fallback failed for %s: %s", sym, fallback_e)
         return out
 
     def get_quote(self, keys: list[str]) -> dict[str, Quote]:
@@ -509,9 +534,12 @@ class DhanAdapter:
                         opt_map[inst.exchange_token] = s
             
             # Fetch indices
+            # Same double-nested shape as ticker_data (see get_ltp_batch):
+            # resp["data"]["data"][segment][sid], not resp["data"][sid].
             if idx_ids:
                 resp = self.dhan.ohlc_data({"IDX_I": idx_ids})
-                data_map = resp.get("data", {}) if isinstance(resp, dict) else {}
+                outer = resp.get("data") if isinstance(resp, dict) else None
+                data_map = outer.get("data", {}).get("IDX_I", {}) if isinstance(outer, dict) else {}
                 for sym in keys:
                     meta = DHAN_INDEX_SECURITY_MAP.get(sym.upper())
                     if meta:
@@ -524,12 +552,13 @@ class DhanAdapter:
                                 open_interest=0.0,
                                 volume=float(q.get("volume", 0.0)),
                             )
-            
+
             # Fetch options
             if opt_ids:
                 # Dhan ohlc_data limits to a certain number of symbols, but let's assume it handles a normal chain depth.
                 resp = self.dhan.ohlc_data({"NSE_FNO": opt_ids})
-                data_map = resp.get("data", {}) if isinstance(resp, dict) else {}
+                outer = resp.get("data") if isinstance(resp, dict) else None
+                data_map = outer.get("data", {}).get("NSE_FNO", {}) if isinstance(outer, dict) else {}
                 for sid_str, q in data_map.items():
                     if q and float(q.get("last_price", 0.0)) > 0:
                         sym = opt_map.get(str(sid_str))
@@ -603,26 +632,79 @@ class DhanAdapter:
                 self._instruments_day = today
                 return master
 
-        # Parse CSV
+        # Parse CSV.
+        #
+        # Column names below are VERIFIED against a real live download of
+        # https://images.dhan.co/api-data/api-scrip-master.csv (captured
+        # 2026-09-16), not guessed. This parser was previously silently
+        # broken in two ways: (1) it read `EXCH_ID`/`TRADING_SYMBOL`/
+        # `INSTRUMENT`/`LOT_SIZE`/`CUSTOM_SYMBOL`, none of which exist in
+        # the real file (the real names all carry the SEM_ prefix), so
+        # every row failed the exchange filter and the master loaded empty;
+        # (2) it then called `Instrument(symbol=..., token=...)`, kwargs
+        # that don't match the dataclass (`trading_symbol`/`exchange_token`),
+        # which raised inside the try block and was swallowed by the
+        # `except Exception` below. Both are fixed here.
+        #
+        # `SM_SYMBOL_NAME` (the field that looks like it should carry the
+        # underlying name) is EMPTY for every derivative row observed --
+        # only populated for equities. The underlying name is instead the
+        # text before the first "-" in `SEM_TRADING_SYMBOL`
+        # (e.g. "NIFTY-Sep2026-FUT" -> "NIFTY", "NIFTY-Nov2026-18950-CE" -> "NIFTY").
+        # `SEM_STRIKE_PRICE` is a dummy negative value ("-0.01000") for
+        # futures, not zero -- treated as "no strike" (0.0) below.
         instruments = []
         try:
             with open(cache_file, "r", encoding="utf-8-sig") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    exch = row.get("EXCH_ID", "")
-                    symbol = row.get("TRADING_SYMBOL", "")
-                    # Basic filtering for Equity/Index/FNO
-                    if exch in ("NSE", "IDX_I", "BSE") and symbol:
-                        instruments.append(
-                            Instrument(
-                                symbol=symbol,
-                                exchange=exch,
-                                segment=row.get("INSTRUMENT", ""),
-                                lot_size=int(row.get("LOT_SIZE", 1)),
-                                name=row.get("CUSTOM_SYMBOL", symbol),
-                                token=row.get("SEM_SMST_SECURITY_ID", "")
-                            )
+                    exch = row.get("SEM_EXM_EXCH_ID", "")
+                    symbol = row.get("SEM_TRADING_SYMBOL", "")
+                    if exch not in ("NSE", "BSE") or not symbol:
+                        continue
+
+                    inst_name = row.get("SEM_INSTRUMENT_NAME", "")  # FUTIDX | OPTIDX | FUTSTK | OPTSTK | EQUITY | INDEX | ...
+                    option_type = row.get("SEM_OPTION_TYPE", "")     # CE | PE | XX (XX = not an option, e.g. futures)
+                    if option_type in ("CE", "PE"):
+                        instrument_type = option_type
+                    elif "FUT" in inst_name:
+                        instrument_type = "FUT"
+                    elif inst_name == "EQUITY":
+                        instrument_type = "EQ"
+                    else:
+                        instrument_type = inst_name
+
+                    strike_str = row.get("SEM_STRIKE_PRICE", "")
+                    try:
+                        strike = float(strike_str) if strike_str else 0.0
+                    except ValueError:
+                        strike = 0.0
+                    if strike < 0:
+                        strike = 0.0  # dummy placeholder on non-option rows
+
+                    expiry_raw = row.get("SEM_EXPIRY_DATE", "")  # "2026-09-29 14:30:00" or ""
+                    expiry = expiry_raw.split(" ")[0] if expiry_raw else ""
+
+                    try:
+                        lot_size = int(float(row.get("SEM_LOT_UNITS", "1") or "1"))
+                    except ValueError:
+                        lot_size = 1
+
+                    underlying_name = symbol.split("-")[0] if "-" in symbol else row.get("SEM_CUSTOM_SYMBOL", symbol)
+
+                    instruments.append(
+                        Instrument(
+                            trading_symbol=symbol,
+                            exchange=exch,
+                            segment=inst_name,
+                            lot_size=lot_size,
+                            name=underlying_name,
+                            exchange_token=row.get("SEM_SMST_SECURITY_ID", ""),
+                            instrument_type=instrument_type,
+                            strike=strike,
+                            expiry=expiry,
                         )
+                    )
         except Exception as e:
             log.error("Failed to parse Dhan Instrument Master: %s", e)
 

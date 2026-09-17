@@ -6,6 +6,7 @@ Config PUT is refused 09:15-15:30 IST: you cannot loosen your own rules mid-tilt
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import os
 import re
@@ -17,6 +18,7 @@ from fastapi import (
     Header,
     HTTPException,
     Request,
+    Response,
     WebSocket,
     WebSocketDisconnect,
 )
@@ -30,11 +32,29 @@ log = get("api.routes")
 router = APIRouter()
 
 
-def require_secret(request: Request, x_vectra_quant_key: str = Header(default="")) -> None:
+def _secret_ok(provided: str, expected: str) -> bool:
+    """Constant-time compare -- a plain `!=` leaks timing information about
+    how many leading characters matched, which matters for a shared secret
+    guarding an API that can place real orders and hold a live broker token."""
+    return hmac.compare_digest(provided or "", expected or "")
+
+
+def require_secret(
+    request: Request,
+    x_vectra_quant_key: str = Header(default="", alias="X-VectraQuant-Key"),
+) -> None:
+    # FastAPI derives a header name from the parameter name by hyphenating
+    # every underscore -- for `x_vectra_quant_key` that's
+    # `X-Vectra-Quant-Key`, NOT `X-VectraQuant-Key` (what the frontend
+    # actually sends, pwa/src/api.js). Without this explicit alias, the two
+    # never matched: invisible while API_SHARED_SECRET defaults to
+    # "dev-insecure" (bypassed below), but the instant a real secret is
+    # configured, every authenticated request from the real frontend would
+    # 401 forever.
     expected = request.app.state.settings.secrets.api_shared_secret
     if not expected or expected == "dev-insecure":
         return  # local dev; production sets a real secret
-    if x_vectra_quant_key != expected:
+    if not _secret_ok(x_vectra_quant_key, expected):
         raise HTTPException(status_code=401, detail="bad or missing X-VectraQuant-Key")
 
 
@@ -51,15 +71,23 @@ def root_index(request: Request) -> Any:
 
 
 @router.get("/health")
-def health(request: Request) -> dict[str, Any]:
+def health(request: Request, response: Response) -> dict[str, Any]:
     st = request.app.state
+    # This must never itself raise -- it's what an orchestrator polls to
+    # decide whether to route traffic here at all, including during a
+    # partial/failed boot when not every attribute below is guaranteed set.
+    ready = bool(getattr(st, "ready", False))
+    boot_error = getattr(st, "boot_error", "") or None
+    if not ready:
+        response.status_code = 503
     return {
-        "ok": True,
-        "mode": st.settings.mode,
+        "ok": ready,
+        "boot_error": boot_error,
+        "mode": getattr(getattr(st, "settings", None), "mode", "?"),
         "ist": now_ist().isoformat(),
         "session_date": session_date(),
-        "broker": getattr(st.broker, "name", "?"),
-        "kill_switch": "ON" if st.killswitch.is_on else "OFF",
+        "broker": getattr(getattr(st, "broker", None), "name", "?"),
+        "kill_switch": "ON" if getattr(getattr(st, "killswitch", None), "is_on", False) else "OFF",
     }
 
 
@@ -80,8 +108,7 @@ def build_state(st: Any) -> dict[str, Any]:
         )
         violations = s.query(Violation).filter(
             Violation.session_date == session_date()).count()
-        llm_rows = list(s.query(LlmCall).filter(
-            LlmCall.session_date == session_date()).all())
+
         suggestions = list(
             s.query(Suggestion).filter(Suggestion.ts >= _today_start())
             .order_by(Suggestion.ts.desc()).limit(40).all()
@@ -206,12 +233,7 @@ def build_state(st: Any) -> dict[str, Any]:
             "guardian_detected_by": st.guardian.detected_by,
             "reconnects": st.feed.reconnects,
         },
-        "llm": {
-            "calls_today": len(llm_rows),
-            "cap": st.settings.llm.suggest_cap_per_day,
-            "by_provider": _count_by(llm_rows, "provider"),
-            "failures": sum(1 for r in llm_rows if not r.ok),
-        },
+
         "violations_today": violations,
         "institutional": {
             "fii_drift": json.loads(state_get("FII_NET_INDEX_FUTURES", "[]")),
@@ -223,7 +245,7 @@ def build_state(st: Any) -> dict[str, Any]:
         },
         "algo": {
             "enabled": getattr(st.settings.algo, "enabled", True) if hasattr(st.settings, "algo") else True,
-            "active_strategies": getattr(st.settings.algo, "active_strategies", ["institutional_breakout"]) if hasattr(st.settings, "algo") else ["institutional_breakout"],
+            "active_strategies": getattr(st.settings.algo, "active_strategies", []) if hasattr(st.settings, "algo") else [],
             "auto_execute": getattr(st.settings.algo, "auto_execute", False) if hasattr(st.settings, "algo") else False,
         },
         "server_time": now_ist().isoformat(),
@@ -481,6 +503,16 @@ class WsHub:
 @router.websocket("/live")
 async def live(ws: WebSocket) -> None:
     st = ws.app.state
+    expected = st.settings.secrets.api_shared_secret
+    if expected and expected != "dev-insecure":
+        # Browsers can't set custom headers on a WebSocket handshake, so the
+        # shared secret travels as a query param here instead (see
+        # pwa/src/api.js liveSocket()) -- same secret, same constant-time
+        # check as every REST endpoint via require_secret().
+        provided = ws.query_params.get("key", "")
+        if not _secret_ok(provided, expected):
+            await ws.close(code=4401)
+            return
     await st.hub.connect(ws)
     try:
         await ws.send_text(json.dumps(build_state(st), default=str))
@@ -497,7 +529,7 @@ async def live(ws: WebSocket) -> None:
 
 # ---------------------------------------------------------------- webhooks
 
-@router.post("/webhooks/signal")
+@router.post("/webhooks/signal", dependencies=[Depends(require_secret)])
 async def signal_webhook(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     """Free Custom / TradingView Signal Webhook endpoint."""
     symbol = str(payload.get("symbol", "NIFTY")).upper()
@@ -508,7 +540,7 @@ async def signal_webhook(request: Request, payload: dict[str, Any]) -> dict[str,
     return {"ok": True, "processed": True, "symbol": symbol, "event": event_kind}
 
 
-@router.post("/broker/refresh-token")
+@router.post("/broker/refresh-token", dependencies=[Depends(require_secret)])
 async def refresh_broker_token(request: Request) -> dict[str, Any]:
     """Update DhanHQ access token dynamically in-memory and in .env."""
     import os
@@ -567,7 +599,7 @@ async def refresh_broker_token(request: Request) -> dict[str, Any]:
     }
 
 
-@router.get("/data/status")
+@router.get("/data/status", dependencies=[Depends(require_secret)])
 async def get_data_status(request: Request) -> dict[str, Any]:
     """Return status of market data feeds, historical store, option chains, and broker session."""
     import os
@@ -578,7 +610,6 @@ async def get_data_status(request: Request) -> dict[str, Any]:
     chain_fresh = getattr(health, "chain_fresh", {}) if health else {}
 
     has_dhan = bool(os.getenv("DHAN_CLIENT_ID") and os.getenv("DHAN_ACCESS_TOKEN"))
-    dhan_snip = os.getenv("DHAN_ACCESS_TOKEN", "")[:8] + "..." if has_dhan else "none"
 
     broker_obj = getattr(st, "broker", None)
     is_authenticated = getattr(broker_obj, "is_authenticated", True)
@@ -594,12 +625,11 @@ async def get_data_status(request: Request) -> dict[str, Any]:
         "feed_degraded": getattr(health, "feed_degraded", False) if health else False,
         "chain_fresh": chain_fresh,
         "dhan_configured": has_dhan,
-        "dhan_token_snippet": dhan_snip,
         "supported_instruments": ["NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY"],
     }
 
 
-@router.post("/data/fetch-candles")
+@router.post("/data/fetch-candles", dependencies=[Depends(require_secret)])
 async def fetch_candles_on_demand(request: Request) -> dict[str, Any]:
     """Fetch/sync historical 1-minute OHLCV candles for an index."""
     from vectra_quant.backtest.engine import load_candles_for_backtest
@@ -633,7 +663,7 @@ async def fetch_candles_on_demand(request: Request) -> dict[str, Any]:
     }
 
 
-@router.post("/data/refresh-chain")
+@router.post("/data/refresh-chain", dependencies=[Depends(require_secret)])
 async def refresh_chain_on_demand(request: Request) -> dict[str, Any]:
     """Force an immediate option chain snapshot refresh across active indices."""
     st = request.app.state
@@ -657,7 +687,7 @@ async def refresh_chain_on_demand(request: Request) -> dict[str, Any]:
     }
 
 
-@router.get("/strategies")
+@router.get("/strategies", dependencies=[Depends(require_secret)])
 def get_strategies_list(request: Request) -> dict[str, Any]:
     """List all registered dynamic algo strategies, parameters, and current active selection."""
     from vectra_quant.strategies.registry import list_strategies
@@ -703,9 +733,42 @@ def get_strategies_list(request: Request) -> dict[str, Any]:
     return {
         "ok": True,
         "strategies": strategies,
-        "active_strategies": algo_cfg.active_strategies if algo_cfg else ["institutional_breakout"],
+        "active_strategies": algo_cfg.active_strategies if algo_cfg else [],
         "enabled": algo_cfg.enabled if algo_cfg else False,
         "auto_execute": algo_cfg.auto_execute if algo_cfg else False,
+    }
+
+
+@router.get("/orderflow/thunderbolt/status", dependencies=[Depends(require_secret)])
+def get_thunderbolt_status() -> dict[str, Any]:
+    """Live order-flow + decision-trace status for today, so the UI can show
+    *why* Thunderbolt hasn't fired -- not just that it hasn't.
+
+    Reads three files written by `scripts/run_thunderbolt_live.py`, a
+    separate process from this API server: the depth recorder's connection
+    health, the per-poll-cycle decision trace (updated every ~5s while the
+    signal window is open, unlike `record.json` which only changes when a
+    real signal fires), and today's session context (VIX/candles the run
+    used). Returns nulls for whatever hasn't been written yet (e.g. before
+    the live script has started today) rather than erroring.
+    """
+    root = os.environ.get("ORDERFLOW_RECORDS_ROOT", "./data/orderflow")
+    today = session_date()
+
+    def _read_json(path: str) -> dict[str, Any] | None:
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    return {
+        "ok": True,
+        "session_date": today,
+        "recorder_health": _read_json(os.path.join(root, "recorder_health", "health.json")),
+        "live_status": _read_json(os.path.join(root, "thunderbolt", f"date={today}", "live_status.json")),
+        "record": _read_json(os.path.join(root, "thunderbolt", f"date={today}", "record.json")),
+        "context": _read_json(os.path.join(root, "context", f"date={today}", "context.json")),
     }
 
 
@@ -730,7 +793,7 @@ async def submit_backtest_run(request: Request) -> dict[str, Any]:
     except Exception:
         body = {}
 
-    strat_name = str(body.get("strategy", "institutional_breakout")).strip()
+    strat_name = str(body.get("strategy", "renko_strategy")).strip()
     instrument = str(body.get("instrument", "NIFTY")).upper()
     days = min(int(body.get("days", 5)), MAX_BACKTEST_DAYS)
     from_date = body.get("from_date")
@@ -749,6 +812,122 @@ async def submit_backtest_run(request: Request) -> dict[str, Any]:
 
     def run_fn(job: Any) -> dict[str, Any]:
         strat = get_strategy(strat_name, params)
+
+        # thunderbolt's signal is the instantaneous order-book imbalance --
+        # there is no historical proxy for this at all (not even an
+        # approximate one like weekly_credit_spread's PCR stand-in), because
+        # the archive has zero order-book depth for any past date. Rather
+        # than run something misleading, return a complete, FE-safe
+        # zero-trade result with a clear explanation in `data_warning` (the
+        # same banner mechanism weekly_credit_spread already uses for its
+        # short-window notice) so the UI renders cleanly instead of crashing
+        # on missing fields or showing a fabricated number.
+        if getattr(strat, "EXECUTION_MODE", None) == "live_only":
+            return {
+                "strategy": strat_name, "instrument": instrument,
+                "days": 0, "start_date": from_date or "", "end_date": to_date or "",
+                "initial_capital": 0.0, "final_pnl": 0.0, "gross_pnl": 0.0, "total_costs": 0.0,
+                "total_trades": 0, "wins": 0, "losses": 0, "win_pct": 0.0, "profit_factor": 0.0,
+                "max_drawdown": 0.0, "trades": [], "wiggle_analysis": None,
+                "data_source": "LIVE_ORDER_FLOW_ONLY",
+                "data_warning": (
+                    "Thunderbolt's signal is the instantaneous order-book imbalance, which does not "
+                    "exist historically for any past date -- there is no backtest to run, not even an "
+                    "approximate one. This strategy can only be paper-traded going forward, once the "
+                    "order-flow recorder is live during market hours."
+                ),
+            }
+
+        # weekly_credit_spread holds positions across multiple sessions
+        # (Wednesday entry, held toward next-week expiry); BacktestEngine's
+        # day loop resets `in_trade` every session by design and can't model
+        # that, so it runs through the dedicated WeeklySpreadEngine instead.
+        if getattr(strat, "EXECUTION_MODE", None) == "weekly_multiday":
+            from datetime import datetime as _dt
+            from vectra_quant.backtest.weekly_spread_engine import WeeklySpreadEngine
+            from vectra_quant.backtest import iea_data as _iea_data_pre
+
+            # Honor the same from_date/to_date/days the FE already sends for
+            # every other strategy, instead of hardcoding a fixed window --
+            # when no explicit range is given, "days" resolves to the last N
+            # real trading sessions exactly like BacktestEngine's tail-session
+            # mode does, so the Timeline picker behaves consistently across
+            # strategies.
+            resolved_from, resolved_to = from_date, to_date
+            if not resolved_from and not resolved_to:
+                tail = _iea_data_pre.load_index_window(instrument, tail_sessions=days)
+                if tail:
+                    resolved_from, resolved_to = min(tail), max(tail)
+            resolved_from = resolved_from or "2024-01-01"
+            resolved_to = resolved_to or "2026-09-14"
+
+            span_days = (_dt.strptime(resolved_to, "%Y-%m-%d") - _dt.strptime(resolved_from, "%Y-%m-%d")).days
+            short_window_warning = None
+            if span_days < 60:
+                short_window_warning = (
+                    f"This strategy trades once a week and holds toward next-week expiry -- "
+                    f"a {span_days}-day window is too short to produce a meaningful sample "
+                    f"(often 0-1 trades). Pick a custom date range of several months instead."
+                )
+
+            p = dict(strat.params)
+            result = WeeklySpreadEngine().run(
+                instrument=instrument,
+                from_date=resolved_from,
+                to_date=resolved_to,
+                entry_weekday=int(p.get("entry_weekday", 2)),
+                direction_mode="pcr",
+                pcr_band_pct=float(p.get("pcr_band_pct", 0.03)),
+                pcr_bullish_above=float(p.get("pcr_bullish_above", 1.05)),
+                pcr_bearish_below=float(p.get("pcr_bearish_below", 0.95)),
+                max_hold_days=int(p.get("max_hold_days", 7)),
+                stop_loss_mult_of_credit=(float(p["stop_loss_mult_of_credit"]) if p.get("stop_loss_mult_of_credit") is not None else None),
+                futures_target_pts_early=float(p.get("futures_target_pts_early", 40.0)),
+                futures_target_pts_late=float(p.get("futures_target_pts_late", 70.0)),
+                futures_target_widen_from_day=int(p.get("futures_target_widen_from_day", 5)),
+                moneyness_offset_pct=float(p.get("moneyness_offset_pct", 0.0)),
+                min_entry_volume=float(p.get("min_entry_volume", 20000.0)),
+            )
+            from vectra_quant.backtest.weekly_spread_engine import NIFTY_LOT_SIZE
+
+            res_dict = result.as_dict()
+            res_dict["strategy"] = strat_name
+            res_dict["final_pnl"] = res_dict["net_pnl"]
+            res_dict["days"] = len(_iea_data_pre.load_index_window(instrument, resolved_from, resolved_to))
+            res_dict["data_warning"] = short_window_warning
+            res_dict["initial_capital"] = round(max((t.max_risk for t in result.trades), default=0.0), 2)
+
+            # The FE renders a leg-level BacktestTrade shape (position_id,
+            # symbol, direction, entry_price/exit_price, opened_at/closed_at)
+            # and groups legs sharing one position_id into a single card --
+            # emit the sell+buy leg pair per trade in that shape rather than
+            # inventing new UI just for this strategy.
+            fe_trades: list[dict[str, Any]] = []
+            for t in result.trades:
+                pos_id = t.entry_date
+                right_code = "CE" if t.right == "C" else "PE"
+                fe_trades.append({
+                    "id": f"{pos_id}_L1", "position_id": pos_id,
+                    "symbol": f"NIFTY {int(t.sell_strike)} {right_code}", "direction": right_code,
+                    "entry_price": t.sell_entry, "exit_price": t.sell_exit,
+                    "opened_at": f"{t.entry_date} 09:20:00", "closed_at": f"{t.exit_date} 15:15:00",
+                    "qty": NIFTY_LOT_SIZE, "net_pnl": t.net_pnl, "gross_pnl": t.gross_pnl,
+                    "costs": t.costs, "slippage_cost": 0.0, "capital_used": t.max_risk,
+                    "exit_reason": t.exit_reason, "win": t.win,
+                })
+                fe_trades.append({
+                    "id": f"{pos_id}_L2", "position_id": pos_id,
+                    "symbol": f"NIFTY {int(t.buy_strike)} {right_code}", "direction": right_code,
+                    "entry_price": t.buy_entry, "exit_price": t.buy_exit,
+                    "opened_at": f"{t.entry_date} 09:20:00", "closed_at": f"{t.exit_date} 15:15:00",
+                    "qty": NIFTY_LOT_SIZE, "net_pnl": 0.0, "gross_pnl": 0.0,
+                    "costs": 0.0, "slippage_cost": 0.0, "capital_used": 0.0,
+                    "exit_reason": t.exit_reason, "win": t.win,
+                })
+            res_dict["trades"] = fe_trades
+            res_dict["wiggle_analysis"] = {}
+            return res_dict
+
         bte = BacktestEngine()
 
         def progress_cb(phase: str, si: int, sc: int, done: int, total: int, date_str: str) -> None:
@@ -802,7 +981,7 @@ async def submit_backtest_run(request: Request) -> dict[str, Any]:
     return {"job_id": job_id}
 
 
-@router.get("/backtest/runs/{job_id}")
+@router.get("/backtest/runs/{job_id}", dependencies=[Depends(require_secret)])
 def get_backtest_run(job_id: str, request: Request) -> dict[str, Any]:
     """Current progress (if still tracked in memory) or the persisted result/history row."""
     st = request.app.state
@@ -826,7 +1005,7 @@ def cancel_backtest_run(job_id: str, request: Request) -> dict[str, Any]:
     return {"ok": True}
 
 
-@router.get("/backtest/runs")
+@router.get("/backtest/runs", dependencies=[Depends(require_secret)])
 def list_backtest_runs(request: Request, limit: int = 20) -> dict[str, Any]:
     st = request.app.state
     return {"runs": st.backtest_jobs.list_recent(limit=min(limit, 100))}

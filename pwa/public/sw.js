@@ -2,7 +2,7 @@
    Shell is cached; /state is network-first because stale trading state is worse
    than no trading state. Push notifications land here. */
 
-const SHELL = 'vectra_quant-shell-v2';
+const SHELL = 'vectra_quant-shell-v3';
 const SHELL_FILES = ['/', '/index.html', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
@@ -56,12 +56,34 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
+  // Vite's own build output under /assets/ is content-hashed (the filename
+  // changes whenever the content does), so cache-first there costs nothing.
+  // Everything else reaching this point is a live API response (strategies,
+  // backtest runs, data status, ...) -- cache-first on those pins the UI to
+  // whatever it first saw and hides every later fix/config change, exactly
+  // like the shell problem above but for data instead of markup. Those stay
+  // network-first, falling back to cache only when actually offline.
+  const isHashedAsset = url.pathname.startsWith('/assets/');
+
+  if (isHashedAsset) {
+    e.respondWith(
+      caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
+        const copy = res.clone();
+        caches.open(SHELL).then((c) => c.put(e.request, copy)).catch(() => {});
+        return res;
+      })),
+    );
+    return;
+  }
+
   e.respondWith(
-    caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
-      const copy = res.clone();
-      caches.open(SHELL).then((c) => c.put(e.request, copy)).catch(() => {});
-      return res;
-    })),
+    fetch(e.request)
+      .then((res) => {
+        const copy = res.clone();
+        caches.open(SHELL).then((c) => c.put(e.request, copy)).catch(() => {});
+        return res;
+      })
+      .catch(() => caches.match(e.request)),
   );
 });
 

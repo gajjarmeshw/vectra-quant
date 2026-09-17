@@ -83,15 +83,6 @@ week:
   loss_limit_mult: 2.5
   red_days_to_paper: 3
 
-llm:
-  min_conf: 70
-  suggest_cap_per_day: 10
-  timeout_s: 10
-  bridge_retries: 2
-  bridge_url: "${CLAUDE_BRIDGE_URL}"
-  groq_model: "llama-3.3-70b-versatile"
-  groq_fallback_model: "openai/gpt-oss-120b"
-
 data:
   tick_staleness_degraded_s: 10
   tick_staleness_critical_s: 60
@@ -136,7 +127,7 @@ push:
 
 algo:
   enabled: true
-  active_strategy: "institutional_breakout"
+  active_strategies: ["thunderbolt", "weekly_credit_spread"]
   auto_execute: false          # false = PWA approval card; true = direct broker execution
 
 broker: dhan                   # dhan | groww

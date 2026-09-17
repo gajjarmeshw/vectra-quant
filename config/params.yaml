@@ -83,15 +83,6 @@ week:
   loss_limit_mult: 2.5
   red_days_to_paper: 3
 
-llm:
-  min_conf: 70
-  suggest_cap_per_day: 10
-  timeout_s: 10
-  bridge_retries: 2
-  bridge_url: "${CLAUDE_BRIDGE_URL}"
-  groq_model: "llama-3.3-70b-versatile"
-  groq_fallback_model: "openai/gpt-oss-120b"
-
 data:
   tick_staleness_degraded_s: 10
   tick_staleness_critical_s: 60
@@ -136,7 +127,13 @@ push:
 
 algo:
   enabled: true
-  active_strategy: "institutional_breakout"
+  # renko_strategy excluded: no validated live edge after the honest backtest
+  # redesign. weekly_credit_spread has execution_mode=weekly_multiday (backtest
+  # + reporting only -- no live day-orchestration executor built yet, so it
+  # never places a live order even though it's listed here). thunderbolt has
+  # execution_mode=live_only and actually runs via its own dedicated process
+  # (scripts/run_thunderbolt_live.py), not through this per-tick dispatch loop.
+  active_strategies: ["thunderbolt", "weekly_credit_spread"]
   auto_execute: false          # false = PWA approval card; true = direct broker execution
 
 broker: dhan                   # dhan | groww

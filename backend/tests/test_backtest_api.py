@@ -58,7 +58,7 @@ def _wait_for_terminal(client, job_id: str, timeout_s: float = 30.0) -> dict:
 def test_submit_returns_immediately_and_completes(client):
     t0 = time.time()
     r = client.post("/backtest/runs", json={
-        "strategy": "institutional_breakout", "instrument": "NIFTY",
+        "strategy": "renko_strategy", "instrument": "NIFTY",
         "from_date": "2026-08-01", "to_date": "2026-08-10", "wiggle_test": False,
     })
     submit_time = time.time() - t0
@@ -75,10 +75,16 @@ def test_submit_returns_immediately_and_completes(client):
 
 
 def test_event_loop_not_blocked_during_run(client):
-    """The literal bug report: other requests must stay responsive while a job runs."""
+    """The literal bug report: other requests must stay responsive while a job runs.
+
+    wiggle_test=True on Renko now runs baseline + 2 variants per numeric
+    param (9 params -> 19 full sub-runs), so the window here is deliberately
+    short — this test is about responsiveness, not about exercising every
+    wiggle variant end to end.
+    """
     r = client.post("/backtest/runs", json={
-        "strategy": "institutional_breakout", "instrument": "NIFTY",
-        "from_date": "2025-01-01", "to_date": "2025-06-30", "wiggle_test": True,
+        "strategy": "renko_strategy", "instrument": "NIFTY",
+        "from_date": "2026-08-01", "to_date": "2026-08-07", "wiggle_test": True,
     })
     assert r.status_code == 202
     job_id = r.json()["job_id"]
@@ -91,30 +97,32 @@ def test_event_loop_not_blocked_during_run(client):
         assert (time.time() - t0) < 1.0  # must not queue behind the running job
         time.sleep(0.2)
 
-    _wait_for_terminal(client, job_id, timeout_s=60.0)
+    _wait_for_terminal(client, job_id, timeout_s=180.0)
 
 
 def test_concurrent_submit_returns_409(client):
+    # No wiggle here — this test only needs job1 to still be RUNNING when job2
+    # is submitted; a plain full-year run already takes long enough for that.
     r1 = client.post("/backtest/runs", json={
-        "strategy": "institutional_breakout", "instrument": "NIFTY",
-        "from_date": "2025-01-01", "to_date": "2025-12-31", "wiggle_test": True,
+        "strategy": "renko_strategy", "instrument": "NIFTY",
+        "from_date": "2025-01-01", "to_date": "2025-12-31", "wiggle_test": False,
     })
     assert r1.status_code == 202
     job1 = r1.json()["job_id"]
 
     r2 = client.post("/backtest/runs", json={
-        "strategy": "institutional_breakout", "instrument": "NIFTY",
+        "strategy": "renko_strategy", "instrument": "NIFTY",
         "from_date": "2026-08-01", "to_date": "2026-08-10", "wiggle_test": False,
     })
     assert r2.status_code == 409
 
     client.post(f"/backtest/runs/{job1}/cancel")
-    _wait_for_terminal(client, job1, timeout_s=60.0)
+    _wait_for_terminal(client, job1, timeout_s=90.0)
 
 
 def test_cancel_stops_a_running_job(client):
     r = client.post("/backtest/runs", json={
-        "strategy": "institutional_breakout", "instrument": "NIFTY",
+        "strategy": "renko_strategy", "instrument": "NIFTY",
         "from_date": "2023-01-01", "to_date": "2026-08-31", "wiggle_test": True,
     })
     assert r.status_code == 202
@@ -140,7 +148,7 @@ def test_unknown_job_id_returns_404(client):
 
 def test_history_lists_completed_runs(client):
     r = client.post("/backtest/runs", json={
-        "strategy": "institutional_breakout", "instrument": "NIFTY",
+        "strategy": "renko_strategy", "instrument": "NIFTY",
         "from_date": "2026-08-01", "to_date": "2026-08-05", "wiggle_test": False,
     })
     job_id = r.json()["job_id"]
@@ -155,7 +163,7 @@ def test_restart_sweep_marks_stale_jobs_aborted():
     from vectra_quant.db import BacktestRun, session
 
     with session() as s:
-        s.add(BacktestRun(id="stale-job-1", status="RUNNING", strategy="institutional_breakout", instrument="NIFTY"))
+        s.add(BacktestRun(id="stale-job-1", status="RUNNING", strategy="renko_strategy", instrument="NIFTY"))
 
     runner = BacktestJobRunner(broadcast=None)
     runner.sweep_stale_on_startup()

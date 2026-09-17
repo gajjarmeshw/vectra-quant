@@ -572,7 +572,7 @@ export function Journal() {
 export function Strategies({ s, onRefresh }) {
   const algo = s?.algo || {};
   const [strategies, setStrategies] = useState([]);
-  const [activeStrats, setActiveStrats] = useState(algo.active_strategies || ['institutional_breakout']);
+  const [activeStrats, setActiveStrats] = useState(algo.active_strategies || []);
   const [autoExec, setAutoExec] = useState(Boolean(algo.auto_execute));
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
@@ -735,7 +735,136 @@ export function Strategies({ s, onRefresh }) {
           );
         })}
       </div>
+
+      <ThunderboltOrderFlowCard active={activeStrats.includes('thunderbolt')} />
     </div>
+  );
+}
+
+/* Reads {recorder_health, live_status, record} every 5s and explains, in
+   plain terms, why Thunderbolt has or hasn't fired -- the per-poll-cycle
+   decision trace the backend now persists, not just the final outcome. */
+function ThunderboltOrderFlowCard({ active }) {
+  const [status, setStatus] = useState(null);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => {
+      api.getThunderboltStatus()
+        .then((d) => { if (!cancelled) { setStatus(d); setErr(''); } })
+        .catch((e) => { if (!cancelled) setErr(e.message); });
+    };
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  if (err) {
+    return (
+      <Card className="border border-line">
+        <Eyebrow>Order Flow — Nifty Thunderbolt</Eyebrow>
+        <p className="text-sec text-red mt-2">Could not load order-flow status: {err}</p>
+      </Card>
+    );
+  }
+  if (!status) {
+    return (
+      <Card className="border border-line">
+        <Eyebrow>Order Flow — Nifty Thunderbolt</Eyebrow>
+        <p className="text-sec text-ink-2 mt-2">Loading…</p>
+      </Card>
+    );
+  }
+
+  const { recorder_health: health, live_status: live, record } = status;
+  const trace = live?.trace;
+
+  const recencySeconds = health?.last_update_at
+    ? Math.round((Date.now() - new Date(health.last_update_at).getTime()) / 1000)
+    : null;
+  const feedLive = health?.connected || (recencySeconds !== null && recencySeconds < 15);
+
+  const filterReasons = trace ? [
+    trace.opposite_gate_skip && 'Opposite-side flow too strong — gated out',
+    trace.pre_open_lock_skip && 'Pre-open extreme locked out this direction',
+    trace.liquidity_reversal_flip && 'Early one-way liquidity reversed — direction flipped',
+    trace.medium_regime_flip && 'MEDIUM regime fade detected — direction flipped',
+    trace.over_stretch_skip && 'Reading already over-stretched — vetoed as a crescendo, not a start',
+    trace.reversal_flip && 'Opposite extreme dominated the crossing — flipped as exhaustion',
+  ].filter(Boolean) : [];
+
+  const verdictReason = () => {
+    if (record?.position) return `Position open (${record.position.direction}).`;
+    if (record?.skipped) return `Day skipped: ${record.skip_reason || 'no reason recorded'}.`;
+    if (!live) return 'No live status yet today — the recorder/paper-trader script may not be running.';
+    if (!live.in_signal_window) return 'Outside today\'s signal window — not evaluating right now.';
+    if (!trace) return 'Waiting for the first evaluation cycle.';
+    if (filterReasons.length) return filterReasons.join(' · ');
+    if (!trace.trigger) return `No qualifying crossing/breakout yet in the ${trace.regime} regime.`;
+    return `${trace.final} — trigger confirmed, no filter blocked it.`;
+  };
+
+  return (
+    <Card className={`border ${active ? 'border-ai ring-1 ring-ai/30' : 'border-line'}`}>
+      <div className="flex items-center justify-between">
+        <Eyebrow>Order Flow — Nifty Thunderbolt</Eyebrow>
+        <span className={`chip text-[11px] font-semibold ${feedLive ? 'bg-green-soft text-green border-green' : 'bg-red-soft text-red border-red'}`}>
+          {feedLive ? '● Feed live' : '○ Feed down'}
+        </span>
+      </div>
+      {!active && (
+        <p className="text-[11px] text-muted mt-1">Not in your active strategies list — shown for visibility only.</p>
+      )}
+
+      <div className="grid grid-cols-2 gap-2 mt-3 text-[11px] num">
+        <div className="px-2.5 py-2 rounded-block bg-line-soft">
+          <div className="text-muted">Last tick</div>
+          <div className="text-ink font-semibold">{recencySeconds === null ? '—' : `${recencySeconds}s ago`}</div>
+        </div>
+        <div className="px-2.5 py-2 rounded-block bg-line-soft">
+          <div className="text-muted">Reconnects today</div>
+          <div className="text-ink font-semibold">{health?.reconnect_count ?? '—'}</div>
+        </div>
+        <div className="px-2.5 py-2 rounded-block bg-line-soft">
+          <div className="text-muted">Prior-session VIX</div>
+          <div className="text-ink font-semibold">
+            {live?.prior_session_vix ?? '—'}
+            {live?.vix_skip_at_or_above != null && (
+              <span className="text-muted font-normal"> / skip ≥ {live.vix_skip_at_or_above}</span>
+            )}
+          </div>
+        </div>
+        <div className="px-2.5 py-2 rounded-block bg-line-soft">
+          <div className="text-muted">Regime</div>
+          <div className="text-ink font-semibold">
+            {trace?.regime ?? '—'}
+            {live?.recent_realized_vols?.length > 0 && (
+              <span className="text-muted font-normal"> (avg {(
+                live.recent_realized_vols.reduce((a, b) => a + b, 0) / live.recent_realized_vols.length
+              ).toFixed(2)})</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-line/60">
+        <div className="text-eyebrow num text-muted mb-1">Latest imbalance reading</div>
+        <div className="font-disp text-lg font-bold text-ink">
+          {live?.latest_imbalance_reading ?? '—'}
+        </div>
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-line/60">
+        <div className="text-eyebrow num text-muted mb-1">Why it {record?.position ? 'fired' : 'hasn\'t fired'}</div>
+        <p className="text-sec text-ink leading-relaxed">{verdictReason()}</p>
+        {trace?.trigger && (
+          <p className="text-[11px] text-muted mt-1 num">
+            Trigger: {trace.trigger.direction} via {trace.trigger.source} at {trace.trigger.value}
+          </p>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -973,30 +1102,54 @@ function GauntletChecklistExplorer({ checklist23 }) {
   );
 }
 
+/* Groups leg-level trade rows into one position per entry/exit event —
+   a 2-4 leg credit spread must read as ONE trade, not several. Falls back
+   to grouping by `id` for any cached result computed before `position_id`
+   existed. */
+function groupTradesByPosition(trades) {
+  const order = [];
+  const byKey = new Map();
+  for (const t of trades) {
+    const key = t.position_id || t.id;
+    if (!byKey.has(key)) {
+      byKey.set(key, []);
+      order.push(key);
+    }
+    byKey.get(key).push(t);
+  }
+  return order.map((key) => {
+    const legs = byKey.get(key);
+    const net_pnl = legs.reduce((s, l) => s + (l.net_pnl || 0), 0);
+    const capital_used = legs.reduce((s, l) => s + (l.capital_used || 0), 0);
+    return { key, legs, net_pnl, capital_used, first: legs[0] };
+  });
+}
+
 function TradeReplayLog({ trades = [] }) {
   const [filter, setFilter] = useState('ALL');
 
   if (!trades || trades.length === 0) return null;
 
-  const filtered = filter === 'ALL'
-    ? trades
+  const positions = groupTradesByPosition(trades);
+  const filteredPositions = filter === 'ALL'
+    ? positions
     : filter === 'WINS'
-    ? trades.filter((t) => t.net_pnl > 0)
-    : trades.filter((t) => t.net_pnl <= 0);
+    ? positions.filter((p) => p.net_pnl > 0)
+    : positions.filter((p) => p.net_pnl <= 0);
 
-  const winsCount = trades.filter((t) => t.net_pnl > 0).length;
-  const lossesCount = trades.filter((t) => t.net_pnl <= 0).length;
+  const winsCount = positions.filter((p) => p.net_pnl > 0).length;
+  const lossesCount = positions.filter((p) => p.net_pnl <= 0).length;
 
   return (
     <Card>
       <div className="flex items-center justify-between">
-        <Eyebrow>Trade Replay Log ({trades.length} trades)</Eyebrow>
+        <Eyebrow>Trade Replay Log ({positions.length} trades{trades.length !== positions.length ? `, ${trades.length} legs` : ''})</Eyebrow>
         <div className="flex gap-1 text-[11px] num">
           <button
             onClick={() => setFilter('ALL')}
             className={`px-2 py-0.5 rounded-pill ${filter === 'ALL' ? 'bg-ink text-paper' : 'bg-line-soft text-ink-2'}`}
           >
-            All ({trades.length})
+            All ({positions.length})
           </button>
           <button
             onClick={() => setFilter('WINS')}
@@ -1014,111 +1167,44 @@ function TradeReplayLog({ trades = [] }) {
       </div>
 
       <div className="mt-3 space-y-2.5 max-h-96 overflow-y-auto pr-1">
-        {filtered.map((t, idx) => {
-          const isWin = t.net_pnl > 0;
-          const exitReason = t.exit_reason || (isWin ? 'TARGET_HIT' : 'STOP_LOSS_HIT');
-          const entryP = Number(t.entry_price || 0);
-          const exitP = Number(t.exit_price || 0);
-          const ptsDiff = exitP - entryP;
-          const [openDate, openTime] = (t.opened_at || '').split(' ');
-          const [, closeTime] = (t.closed_at || '').split(' ');
-
+        {filteredPositions.map((pos, idx) => {
+          const legs = pos.legs;
+          const isMultiLeg = legs.length > 1;
           return (
-            <div
-              key={idx}
-              className="p-3 rounded-block bg-line-soft/40 border border-line text-xs num space-y-1.5"
-            >
-              {/* Row 1: Trade # · Direction · Symbol · PnL */}
+            <div key={pos.key} className="p-3 rounded-block bg-line-soft/40 border border-line text-xs num space-y-2">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-ink">
-                    #{idx + 1}
-                  </span>
+                  <span className="font-bold text-ink">#{idx + 1}</span>
+                  {isMultiLeg && (
+                    <span className="chip text-[9px] font-semibold px-1.5 py-0.5 bg-line-soft text-ink-2 border-line">
+                      {legs.length} legs
+                    </span>
+                  )}
                   <span
-                    className={`chip text-[10px] font-bold px-1.5 py-0.5 ${
-                      t.direction === 'PE'
-                        ? 'bg-amber-soft text-amber border-amber'
-                        : 'bg-ai-soft text-ai border-ai'
+                    className={`chip text-[9px] font-semibold py-0.5 ${
+                      (pos.first.exit_reason || '').includes('Target')
+                        ? 'bg-green-soft text-green border-green'
+                        : (pos.first.exit_reason || '').includes('Stop')
+                        ? 'bg-red-soft text-red border-red'
+                        : 'bg-line-soft text-ink-2 border-line'
                     }`}
                   >
-                    {t.direction}
+                    {pos.first.exit_reason || (pos.net_pnl > 0 ? 'TARGET_HIT' : 'STOP_LOSS_HIT')}
                   </span>
-                  {t.symbol && (
-                    <span className="font-semibold text-ink-2 text-[11px]">
-                      {t.symbol}
-                      {t.expiry && <span className="text-muted font-normal"> · exp {t.expiry}</span>}
-                    </span>
-                  )}
                 </div>
-                <span className={`font-bold text-sm ${pnlColor(t.net_pnl)}`}>
-                  {rupee(t.net_pnl, true)}
+                <span className={`font-bold text-sm ${pnlColor(pos.net_pnl)}`}>
+                  {rupee(pos.net_pnl, true)}
                 </span>
               </div>
-
-              {/* Row 1b: Exit reason */}
-              <div>
-                <span
-                  className={`chip text-[9px] font-semibold py-0.5 ${
-                    exitReason.includes('Target')
-                      ? 'bg-green-soft text-green border-green'
-                      : exitReason.includes('Stop')
-                      ? 'bg-red-soft text-red border-red'
-                      : 'bg-line-soft text-ink-2 border-line'
-                  }`}
-                >
-                  {exitReason}
+              {pos.capital_used > 0 && (
+                <span className="chip text-[9px] font-semibold bg-ai-soft text-ai border-ai px-1.5 py-0.5">
+                  Capital: {rupee(pos.capital_used)}
                 </span>
-              </div>
-
-              {/* Row 2: Option Spread Details (credit-spread strategies only) */}
-              {t.instrument_details && (
-                <div className="flex items-center gap-1.5 text-[11px]">
-                  <span className="text-muted">Spread:</span>
-                  {t.instrument_details.split(' / ').map((leg, i) => {
-                    const isSell = leg.startsWith('SELL');
-                    return (
-                      <span
-                        key={i}
-                        className={`chip text-[10px] font-semibold px-1.5 py-0.5 ${
-                          isSell
-                            ? 'bg-red-soft text-red border-red'
-                            : 'bg-green-soft text-green border-green'
-                        }`}
-                      >
-                        {leg.trim()}
-                      </span>
-                    );
-                  })}
-                </div>
               )}
-
-              {/* Row 3: Entry → Exit prices and pts */}
-              <div className="flex justify-between items-center text-[11px] text-muted">
-                <div className="flex items-center gap-1.5">
-                  <span>
-                    {entryP.toFixed(2)} → {exitP.toFixed(2)}
-                  </span>
-                  <span className={ptsDiff >= 0 ? 'text-green font-semibold' : 'text-red font-semibold'}>
-                    ({ptsDiff >= 0 ? '+' : ''}{ptsDiff.toFixed(2)} pts)
-                  </span>
-                </div>
-              </div>
-
-              {/* Row 4: Time · Slippage/Fees/Qty · Capital */}
-              <div className="flex justify-between text-[10px] text-muted pt-1 border-t border-line/60">
-                <span>
-                  {openDate && openTime && closeTime
-                    ? `${openDate} · ${openTime} → ${closeTime} IST`
-                    : 'Intraday Bar Execution'}
-                </span>
-                <div className="flex items-center gap-2">
-                  <span>Slippage: {rupee(t.slippage_cost || 0)} · Fees: {rupee(t.costs || 0)} · Qty: {t.qty || 50}</span>
-                  {t.capital_used > 0 && (
-                    <span className="chip text-[9px] font-semibold bg-ai-soft text-ai border-ai px-1.5 py-0.5">
-                      Capital: {rupee(t.capital_used)}
-                    </span>
-                  )}
-                </div>
+              <div className="space-y-1.5">
+                {legs.map((t, legIdx) => (
+                  <LegRow key={legIdx} t={t} />
+                ))}
               </div>
             </div>
           );
@@ -1128,9 +1214,62 @@ function TradeReplayLog({ trades = [] }) {
   );
 }
 
+function LegRow({ t }) {
+  const entryP = Number(t.entry_price || 0);
+  const exitP = Number(t.exit_price || 0);
+  const ptsDiff = exitP - entryP;
+  const [openDate, openTime] = (t.opened_at || '').split(' ');
+  const [, closeTime] = (t.closed_at || '').split(' ');
+
+  return (
+    <div className="text-xs num space-y-1 border-t border-line/60 pt-1.5 first:border-t-0 first:pt-0">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span
+            className={`chip text-[10px] font-bold px-1.5 py-0.5 ${
+              t.direction === 'PE'
+                ? 'bg-amber-soft text-amber border-amber'
+                : 'bg-ai-soft text-ai border-ai'
+            }`}
+          >
+            {t.direction}
+          </span>
+          {t.symbol && (
+            <span className="font-semibold text-ink-2 text-[11px]">
+              {t.symbol}
+              {t.expiry && <span className="text-muted font-normal"> · exp {t.expiry}</span>}
+            </span>
+          )}
+        </div>
+        <span className={`font-semibold text-[11px] ${pnlColor(t.net_pnl)}`}>
+          {rupee(t.net_pnl, true)}
+        </span>
+      </div>
+
+      <div className="flex justify-between items-center text-[11px] text-muted">
+        <span>
+          {entryP.toFixed(2)} → {exitP.toFixed(2)}
+          <span className={`ml-1.5 font-semibold ${ptsDiff >= 0 ? 'text-green' : 'text-red'}`}>
+            ({ptsDiff >= 0 ? '+' : ''}{ptsDiff.toFixed(2)} pts)
+          </span>
+        </span>
+      </div>
+
+      <div className="flex justify-between text-[10px] text-muted">
+        <span>
+          {openDate && openTime && closeTime
+            ? `${openDate} · ${openTime} → ${closeTime} IST`
+            : 'Intraday Bar Execution'}
+        </span>
+        <span>Slippage: {rupee(t.slippage_cost || 0)} · Fees: {rupee(t.costs || 0)} · Qty: {t.qty || 50}</span>
+      </div>
+    </div>
+  );
+}
+
 export function Backtest({ liveJob } = {}) {
   const [inst, setInst] = useState('NIFTY');
-  const [strat, setStrat] = useState('institutional_breakout');
+  const [strat, setStrat] = useState('renko_strategy');
   const [days, setDays] = useState(5);
   const [timelineMode, setTimelineMode] = useState('preset');
   const [fromDate, setFromDate] = useState(() => {
@@ -1277,10 +1416,16 @@ export function Backtest({ liveJob } = {}) {
                 onChange={(e) => setStrat(e.target.value)}
               >
                 <option value="renko_strategy">Dynamic Renko</option>
-                <option value="institutional_breakout">Breakout</option>
-                <option value="option_wall_squeeze">Wall Squeeze</option>
-                <option value="wall_mean_reversion">Mean Rev</option>
+                <option value="weekly_credit_spread">Weekly Credit Spread (PCR)</option>
+                <option value="thunderbolt">Nifty Thunderbolt (1x2 Backspread)</option>
               </select>
+              {strat === 'thunderbolt' && (
+                <p className="text-[10px] text-amber mt-1 leading-snug">
+                  Live order-flow signal — no historical order-book data exists, so this cannot be
+                  backtested (running it will return a 0-trade result explaining why). Paper-trade
+                  only, once the recorder is live during market hours.
+                </p>
+              )}
             </div>
             <div>
               <label className="text-eyebrow num text-muted block mb-1">Timeline</label>
@@ -1366,7 +1511,10 @@ export function Backtest({ liveJob } = {}) {
 
       {res && (
         <div className="space-y-cardgap">
-          {/* Gauntlet Scorecard Verdict Card */}
+          {/* Gauntlet Scorecard Verdict Card -- meaningless for a strategy
+              that never ran (live-only signal, no historical data), so a
+              pass/fail checklist verdict here would just be confusing. */}
+          {res.data_source !== 'LIVE_ORDER_FLOW_ONLY' && (
           <div
             className={`card p-4 border relative overflow-hidden ${
               res.gauntlet_tone === 'green' || res.passes_checklist
@@ -1426,6 +1574,7 @@ export function Backtest({ liveJob } = {}) {
               <span className="num not-italic text-[10px]">Doc RW/INCUB/2026-08</span>
             </div>
           </div>
+          )}
 
           {/* Data Provenance Badge */}
           <div className={`p-3 rounded-block border flex items-center justify-between text-xs num ${

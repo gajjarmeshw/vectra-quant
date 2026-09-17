@@ -131,7 +131,18 @@ class Lifecycle:
         sl = float(payload.get("stop_loss_premium", 0))
         tgt = float(payload.get("target_premium", 0))
         mid = (low + high) / 2.0
-        rr = implied_rr(mid, sl, tgt)
+        # Signed first, not abs() on both sides: for a long-premium trade the
+        # stop must sit below entry and the target above it. Wrapping both
+        # halves in abs() (as this was briefly inlined) makes a backwards
+        # setup -- stop above entry, or target below it -- produce a
+        # positive-looking ratio instead of getting caught, which the
+        # deleted `implied_rr()` helper this replaced would have rejected.
+        if sl > 0 and (mid - sl) != 0:
+            rr = (tgt - mid) / (mid - sl)
+        else:
+            rr = 0.0
+        if rr <= 0:
+            return GateResult(False, f"RR {rr:.2f} <= 0 — stop/target on the wrong side of entry"), None
         if rr < 1.5:
             return GateResult(False, f"RR {rr:.2f} < 1.5"), None
 

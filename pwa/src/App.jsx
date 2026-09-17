@@ -103,6 +103,7 @@ export default function App() {
     setBusy('squareoff');
     try {
       const brokerName = state?.broker === 'dhan' ? 'DhanHQ' : 'Groww';
+      const r = await api.squareOff();
       flash(r.flat ? 'Flat — verified' : `NOT FLAT — check the ${brokerName} app now`);
       await refresh();
     } catch (e) {
@@ -303,7 +304,7 @@ export default function App() {
             
             <div className={tab === 'paper' ? 'block animate-in fade-in slide-in-from-bottom-2 duration-300' : 'hidden'}>
               <div className="space-y-cardgap">
-                <PaperTrading s={state} />
+                <PaperTrading s={state} onSquareOff={onSquareOff} busy={busy === 'squareoff'} />
               </div>
             </div>
 

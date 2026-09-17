@@ -49,6 +49,7 @@ export const setPreset = (preset) =>
   req('/config/preset', { method: 'POST', body: JSON.stringify({ preset }) });
 
 export const getStrategies = () => req('/strategies');
+export const getThunderboltStatus = () => req('/orderflow/thunderbolt/status');
 
 /* Job-based backtest: submit returns a job_id immediately (202) — the sim runs
    on a background worker thread, never on the request. Progress streams over
@@ -146,7 +147,7 @@ export async function enablePush() {
 export function liveSocket(onMessage, onStatus) {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const base = API_BASE || `${proto}://${window.location.host}`;
-  const url = `${base.replace(/^http/, 'ws')}/live`;
+  const url = `${base.replace(/^http/, 'ws')}/live?key=${encodeURIComponent(KEY)}`;
   let ws = null;
   let closed = false;
   let retry = 0;
