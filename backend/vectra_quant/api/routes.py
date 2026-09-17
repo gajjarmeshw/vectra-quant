@@ -424,9 +424,10 @@ def dayend(request: Request, date: str = "") -> dict:
 
 
 @router.get("/report/premarket", dependencies=[Depends(require_secret)])
-def premarket_report(request: Request) -> dict:
-    from vectra_quant.reports.premarket import build_premarket_report
-    return build_premarket_report(request.app.state)
+def premarket_report(request: Request, refresh: bool = False) -> dict:
+    """Cached by default; `?refresh=1` is the UI's explicit re-run button."""
+    from vectra_quant.reports.premarket import get_premarket_report
+    return get_premarket_report(request.app.state, force=refresh)
 
 
 @router.get("/report/journal", dependencies=[Depends(require_secret)])

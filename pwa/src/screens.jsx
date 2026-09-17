@@ -161,38 +161,59 @@ function StatusStrip({ s }) {
 
 /* ---------------------------------------------------------------- Signals */
 
+/* The execution posture, in one strip.
+ *
+ * This used to read `algo.active_strategy` (singular) against a lookup table of
+ * three strategy names that are not registered anywhere — so it always fell
+ * through to the literal string "Default Strategy". The real field is
+ * `active_strategies`, a list, and it is what the engine actually runs. */
 export function AlgoStrategyBanner({ algo }) {
   if (!algo) return null;
-  const stratNames = {
-    institutional_breakout: 'Institutional Breakout (ORB + Walls)',
-    option_wall_squeeze: 'Trapped Option Wall Squeeze',
-    wall_mean_reversion: 'Defended Range Mean Reversion',
-  };
-  const activeLabel = stratNames[algo.active_strategy] || algo.active_strategy || 'Default Strategy';
+  const active = algo.active_strategies || [];
   const isAuto = Boolean(algo.auto_execute);
 
   return (
-    <Card className="!p-3.5 space-y-1.5 border border-line">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className={`inline-block w-2 h-2 rounded-full ${algo.enabled ? 'bg-ai ai-pulse' : 'bg-muted'}`} />
-          <Eyebrow>Active Algo Strategy</Eyebrow>
+    <Card tone={isAuto ? 'ai' : ''} className="!p-0 overflow-hidden">
+      <div className="flex items-stretch">
+        <div className={`w-[3px] shrink-0 ${algo.enabled ? 'bg-ai' : 'bg-line'}`} />
+        <div className="flex-1 min-w-0 p-cardpad">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${
+                  algo.enabled ? 'bg-ai ai-pulse' : 'bg-muted'
+                }`}
+              />
+              <Eyebrow>Execution posture</Eyebrow>
+            </div>
+            <span className={`chip shrink-0 font-semibold ${isAuto ? '!bg-ai-soft !text-ai !border-ai/40' : ''}`}>
+              {isAuto ? 'AUTO-PILOT' : 'ASSISTED'}
+            </span>
+          </div>
+
+          {active.length === 0 ? (
+            <div className="font-disp text-f15 font-semibold text-amber mt-2">
+              No strategy active — nothing can fire
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-1.5 mt-2.5">
+              {active.map((name) => {
+                const a = ACCENT_CLASSES[STRATEGY_ACCENT[name] || 'ai'];
+                return (
+                  <span key={name} className={`chip font-semibold ${a.chip}`}>
+                    {name.replace(/_/g, ' ')}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          <p className="text-sec text-muted mt-2.5 leading-relaxed">
+            {isAuto
+              ? 'Qualifying signals execute straight through the risk FSM to the broker — no tap required.'
+              : 'Qualifying signals queue below and wait for a tap. Nothing reaches the broker on its own.'}
+          </p>
         </div>
-        <span
-          className={`chip font-semibold text-f11 px-2 py-0.5 rounded-full border ${
-            isAuto ? 'bg-ai-soft text-ai border-ai-soft' : 'bg-line-soft text-ink-2 border-line'
-          }`}
-        >
-          {isAuto ? '⚡ Auto-Pilot' : '✋ Assisted'}
-        </span>
-      </div>
-      <div className="font-disp text-f15 font-semibold text-ink">
-        {activeLabel}
-      </div>
-      <div className="num text-sec text-muted">
-        {isAuto
-          ? 'Autonomous execution active · Validated algo signals execute directly through FSM risk gates.'
-          : 'Assisted mode · Algo signals queue below for 1-tap human execution.'}
       </div>
     </Card>
   );
@@ -200,10 +221,19 @@ export function AlgoStrategyBanner({ algo }) {
 
 export function Signals({ s, onApprove, onReject, busy }) {
   const active = s.active_suggestions || [];
+  const history = s.suggestions || [];
+  const activeStrats = s.algo?.active_strategies || [];
+
   return (
     <div className="space-y-cardgap">
       <AlgoStrategyBanner algo={s.algo} />
 
+      {active.length > 0 && (
+        <SectionHeader
+          title="Awaiting your decision"
+          sub={`${active.length} live · expires on the clock`}
+        />
+      )}
       {active.map((q) => (
         <SuggestionCard
           key={q.id}
@@ -214,50 +244,74 @@ export function Signals({ s, onApprove, onReject, busy }) {
         />
       ))}
 
-      <Card>
-        <Eyebrow>Today&rsquo;s signals</Eyebrow>
-        {(s.suggestions || []).length === 0 ? (
-          <Empty>
-            No signals yet. Detectors armed: level break, VIX, OI shift, momentum.
-          </Empty>
+      <Card className="!p-0 overflow-hidden">
+        <div className="px-cardpad pt-cardpad pb-2.5 flex items-center justify-between gap-2">
+          <Eyebrow>Signal log · today</Eyebrow>
+          {history.length > 0 && (
+            <span className="num text-f10 text-muted">{history.length} evaluated</span>
+          )}
+        </div>
+        {history.length === 0 ? (
+          <div className="px-cardpad pb-cardpad">
+            <Empty>
+              {activeStrats.length === 0
+                ? 'No strategy is active, so nothing is being evaluated. Arm one on the Strategies panel.'
+                : `Nothing has triggered yet. Watching: ${activeStrats
+                    .map((n) => n.replace(/_/g, ' '))
+                    .join(', ')}.`}
+            </Empty>
+          </div>
         ) : (
-          <div className="mt-3 space-y-3">
-            {(s.suggestions || []).map((q) => (
-              <Row
-                key={q.id}
-                className="pb-3 border-b border-line last:border-0"
-                left={
-                  <>
-                    <div className="num text-sec text-muted">{q.event}</div>
-                    <div className="num text-body mt-0.5">
+          <div className="overflow-x-auto">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Trigger</th>
+                  <th>Contract</th>
+                  <th>Origin</th>
+                  <th className="text-right">Outcome</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((q) => (
+                  <tr key={q.id}>
+                    <td className="whitespace-nowrap">{q.event || '—'}</td>
+                    <td className="text-ink font-medium whitespace-nowrap">
                       {q.instrument} {q.strike ? Math.round(q.strike) : ''} {q.direction}
-                    </div>
-                  </>
-                }
-                right={<VerdictChip q={q} />}
-              />
-            ))}
+                    </td>
+                    <td className="whitespace-nowrap text-muted">{originLabel(q)}</td>
+                    <td className="text-right">
+                      <VerdictChip q={q} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
-        <div className="num text-eyebrow text-muted mt-4 pt-3 border-t border-line">
-          Suggestions {s.llm?.calls_today ?? 0}/{s.llm?.cap ?? 10} ·{' '}
-          {Object.entries(s.llm?.by_provider || {})
-            .map(([k, v]) => `${k} ${v}`)
-            .join(' · ') || 'no calls yet'}
-        </div>
       </Card>
     </div>
   );
 }
 
+/* Suggestions carry `model` as either `algo:<strategy>` or a provider model
+   id. Everything currently running is an algo — the LLM path was removed — so
+   the label says which strategy fired rather than implying a model call. */
+function originLabel(q) {
+  const m = q.model || '';
+  if (m.startsWith('algo:')) return m.replace('algo:', '').replace(/_/g, ' ');
+  if (q.origin === 'ALGO') return 'algo';
+  return m.split('/').pop() || q.origin || '—';
+}
+
 function VerdictChip({ q }) {
   const map = {
-    TAKEN: 'bg-ink text-paper border-ink',
-    REJECTED: 'text-ink-2',
-    EXPIRED: 'text-muted',
-    NO_TRADE: 'text-ai',
-    GATED: 'bg-amber-soft text-amber border-amber-soft',
-    QUEUED: 'bg-ai-soft text-ai border-ai-soft',
+    TAKEN: '!bg-green-soft !text-green !border-green/40',
+    REJECTED: '!text-ink-2',
+    EXPIRED: '!text-muted',
+    NO_TRADE: '!text-ai',
+    GATED: '!bg-amber-soft !text-amber !border-amber/40',
+    QUEUED: '!bg-ai-soft !text-ai !border-ai/40',
   };
   return (
     <span className={`chip ${map[q.status] || ''}`} title={q.gate_reason || ''}>
@@ -267,87 +321,130 @@ function VerdictChip({ q }) {
   );
 }
 
+/* The one screen in the app where a single tap sends a real order, so the
+   numbers that decide it — risk, stop, target, time left — are the loudest
+   things on the card, and the expiry is a bar you can see draining rather
+   than a number you have to keep re-reading. */
 function SuggestionCard({ q, onApprove, onReject, busy }) {
   const [left, setLeft] = useState(q.seconds_left ?? 0);
+  const total = useRef(q.seconds_left || 1);
+
   useEffect(() => {
     setLeft(q.seconds_left ?? 0);
+    total.current = Math.max(1, q.seconds_left || 1);
     const t = setInterval(() => setLeft((v) => Math.max(0, v - 1)), 1000);
     return () => clearInterval(t);
   }, [q.id, q.seconds_left]);
 
   const dead = left <= 0;
-  const sideColor = q.direction === 'CE' ? 'text-green' : 'text-red';
-  const isAlgo = q.origin === 'ALGO' || (q.model && q.model.startsWith('algo:'));
+  const frac = Math.max(0, Math.min(1, left / total.current));
+  const isCall = q.direction === 'CE';
+  const accent = ACCENT_CLASSES[STRATEGY_ACCENT[(q.model || '').replace('algo:', '')] || 'ai'];
 
   return (
-    <Card accent className={dead ? 'opacity-50' : ''}>
-      <div className="-m-cardpad mb-cardpad px-cardpad py-2.5 bg-ai-soft rounded-t-card flex justify-between items-center">
-        <span className="num text-eyebrow text-ai flex items-center gap-2">
-          <span className="inline-block w-[7px] h-[7px] rounded-full bg-ai ai-pulse" />
-          {isAlgo ? (
-            <span className="font-semibold tracking-wider text-ai">
-              ALGO · {(q.model || '').replace('algo:', '').replace(/_/g, ' ').toUpperCase()}
-            </span>
-          ) : (
-            <>
-              {(q.model || 'LLM').split('/').pop().toUpperCase()}
-              {q.event ? ` · ${q.event}` : ''}
-            </>
-          )}
-        </span>
-        <span className="num text-eyebrow text-ai">
-          {dead ? 'expired — market moved' : `expires 0:${String(left).padStart(2, '0')}`}
-        </span>
-      </div>
-
-      <div className={`font-disp text-contract font-semibold ${sideColor}`}>
-        {q.instrument} {Math.round(q.strike)} {q.direction}
-      </div>
-      <div className="num text-sec text-muted mt-0.5">{q.symbol}</div>
-
-      <p className="text-body text-ink-2 mt-3 pl-3 border-l-2 border-line">
-        {q.thesis}
-        {q.invalidation && (
-          <>
-            <br />
-            <span className="text-muted">Invalidation: {q.invalidation}</span>
-          </>
-        )}
-      </p>
-
-      <div className="grid grid-cols-2 gap-3 mt-4">
-        <Stat label="Entry zone" value={`${num(q.entry_low)}–${num(q.entry_high)}`} />
-        <Stat label="Stop" value={num(q.sl)} tone="text-red" />
-        <Stat label="Target" value={num(q.target)} tone="text-green" />
-        <Stat label="Time stop" value={`${q.time_stop}m`} />
-      </div>
-
-      <div className="mt-4">
-        <Row
-          left={<Eyebrow>Confidence</Eyebrow>}
-          right={<span className="num text-body text-ai">{q.confidence}</span>}
+    <Card tone={dead ? '' : 'ai'} className={`!p-0 overflow-hidden ${dead ? 'opacity-50' : ''}`}>
+      {/* expiry drains left-to-right across the top edge */}
+      <div className="h-[3px] w-full bg-line-soft">
+        <div
+          className={`h-full ${frac < 0.3 ? 'bg-red' : 'bg-ai'}`}
+          style={{ width: `${frac * 100}%`, transition: 'width 1s linear' }}
         />
-        <div className="h-1.5 rounded-pill bg-line-soft mt-1.5 overflow-hidden">
-          <div className="h-full bg-ai" style={{ width: `${q.confidence}%` }} />
+      </div>
+
+      <div className="px-cardpad py-2.5 flex items-center justify-between gap-2 border-b border-line">
+        <span className={`chip font-semibold ${accent.chip}`}>{originLabel(q)}</span>
+        <span className={`num text-f10 ${dead ? 'text-muted' : frac < 0.3 ? 'text-red' : 'text-ink-2'}`}>
+          {dead ? 'expired — market moved' : `${left}s to decide`}
+        </span>
+      </div>
+
+      <div className="p-cardpad space-y-4">
+        <div className="flex items-baseline justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <div className={`font-disp text-contract font-semibold ${isCall ? 'text-green' : 'text-red'}`}>
+              {q.instrument} {Math.round(q.strike)} {q.direction}
+            </div>
+            <div className="num text-f10 text-muted mt-0.5">{q.symbol}</div>
+          </div>
+          <div className="text-right shrink-0">
+            <div className="eyebrow">R:R</div>
+            <div className="num text-f15 font-semibold text-ink">{num(q.rr, 2)}</div>
+          </div>
         </div>
-      </div>
 
-      <div className="num text-sec text-ink-2 mt-4 p-3 rounded-block bg-line-soft">
-        {q.lots} lot · risk {rupee(q.risk)} · cost {rupee(q.cost)} · RR {num(q.rr, 2)}
-        {q.over_risk && <span className="text-amber"> · over-risk</span>}
-      </div>
+        {/* stop · entry · target on one axis, so the shape of the trade is
+            legible before any of the numbers are read */}
+        <div>
+          <div className="relative h-2 rounded-pill bg-well border border-line/70 overflow-hidden">
+            <div className="absolute inset-y-0 left-0 w-1/3 bg-red/25" />
+            <div className="absolute inset-y-0 right-0 w-1/2 bg-green/25" />
+            <div className="absolute inset-y-0 left-1/3 w-[2px] bg-ink" />
+          </div>
+          <div className="grid grid-cols-3 gap-2 mt-2">
+            <div>
+              <div className="eyebrow">Stop</div>
+              <div className="num text-sec font-medium text-red">{num(q.sl)}</div>
+            </div>
+            <div className="text-center">
+              <div className="eyebrow">Entry</div>
+              <div className="num text-sec font-medium text-ink">
+                {num(q.entry_low)}–{num(q.entry_high)}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="eyebrow">Target</div>
+              <div className="num text-sec font-medium text-green">{num(q.target)}</div>
+            </div>
+          </div>
+        </div>
 
-      <div className="flex gap-2 mt-4">
-        <button className="btn-ghost flex-1" disabled={dead || busy} onClick={() => onReject(q.id)}>
-          Reject
-        </button>
-        <button
-          className="btn-primary flex-[2]"
-          disabled={dead || busy}
-          onClick={() => onApprove(q.id)}
-        >
-          {busy ? 'Placing…' : `Approve · buy ${q.lots} lot`}
-        </button>
+        {q.thesis && (
+          <p className="text-sec text-ink-2 leading-relaxed pl-3 border-l-2 border-line">
+            {q.thesis}
+            {q.invalidation && (
+              <>
+                <br />
+                <span className="text-muted">Invalidation: {q.invalidation}</span>
+              </>
+            )}
+          </p>
+        )}
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <StatTile label="Size" value={`${q.lots} lot`} accent="violet" />
+          <StatTile label="Risk" value={rupee(q.risk)} accent={q.over_risk ? 'amber' : 'red'} />
+          <StatTile label="Cost" value={rupee(q.cost)} accent="orange" />
+          <StatTile label="Time stop" value={`${q.time_stop}m`} accent="cyan" />
+        </div>
+
+        {q.over_risk && (
+          <Banner tone="amber">Sized above the per-trade risk budget.</Banner>
+        )}
+
+        {q.confidence != null && (
+          <div>
+            <Row
+              left={<Eyebrow>Confidence</Eyebrow>}
+              right={<span className="num text-sec text-ai">{q.confidence}</span>}
+            />
+            <div className="h-1.5 rounded-pill bg-line-soft mt-1.5 overflow-hidden">
+              <div className="h-full bg-ai" style={{ width: `${q.confidence}%` }} />
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <button className="btn-ghost flex-1" disabled={dead || busy} onClick={() => onReject(q.id)}>
+            Reject
+          </button>
+          <button
+            className="btn-primary flex-[2]"
+            disabled={dead || busy}
+            onClick={() => onApprove(q.id)}
+          >
+            {busy ? 'Placing…' : `Approve · buy ${q.lots} lot`}
+          </button>
+        </div>
       </div>
     </Card>
   );
@@ -430,9 +527,14 @@ export function Positions({ s, onSquareOff, busy }) {
 
 /* ---------------------------------------------------------------- Locked */
 
-/* Counts down to the next 09:15 IST in the phone's own clock. */
+/* The ordinary overnight gap, 15:30 close → 09:15 open. The ring drains
+   across it; a longer wait (weekend, or an early lock) just starts full. */
+const OVERNIGHT_S = 17 * 3600 + 45 * 60;
+
+/* Counts down to the next 09:15 IST in the phone's own clock. Returns the
+   seconds too, so the ring and the digits can't drift apart. */
 function useUnlockCountdown() {
-  const [txt, setTxt] = useState('');
+  const [st, setSt] = useState({ text: '—', secs: 0, opensAt: null });
   useEffect(() => {
     const tick = () => {
       const now = new Date();
@@ -444,68 +546,217 @@ function useUnlockCountdown() {
       while (open.getDay() === 0 || open.getDay() === 6) open.setDate(open.getDate() + 1);
       const secs = Math.max(0, Math.floor((open - ist) / 1000));
       const p = (n) => String(n).padStart(2, '0');
-      setTxt(`${p(Math.floor(secs / 3600))}:${p(Math.floor((secs % 3600) / 60))}:${p(secs % 60)}`);
+      const days = Math.floor(secs / 86400);
+      /* Over a weekend "63:12:05" is unreadable — break out the days. */
+      const text = days
+        ? `${days}d ${p(Math.floor((secs % 86400) / 3600))}h ${p(Math.floor((secs % 3600) / 60))}m`
+        : `${p(Math.floor(secs / 3600))}:${p(Math.floor((secs % 3600) / 60))}:${p(secs % 60)}`;
+      setSt({ text, secs, opensAt: open });
     };
     tick();
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
   }, []);
-  return txt;
+  return st;
 }
 
+/* The countdown as a draining ring. SVG strokes inherit currentColor so the
+   theme reaches them without a literal. */
+function CountdownRing({ secs, size = 150 }) {
+  const frac = Math.max(0, Math.min(1, secs / OVERNIGHT_S));
+  const r = (size - 12) / 2;
+  const circ = 2 * Math.PI * r;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+      <circle
+        cx={size / 2} cy={size / 2} r={r}
+        className="text-line" fill="none" stroke="currentColor" strokeWidth="6"
+      />
+      <circle
+        cx={size / 2} cy={size / 2} r={r}
+        className="text-ai" fill="none" stroke="currentColor" strokeWidth="6"
+        strokeLinecap="round"
+        strokeDasharray={circ}
+        strokeDashoffset={circ * (1 - frac)}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        style={{ transition: 'stroke-dashoffset 1s linear' }}
+      />
+    </svg>
+  );
+}
+
+/* What is actually armed for the next session, from the same /strategies
+   payload the Trade tab uses. A strategy is only ARMED if it is switched on
+   *and* every data dependency it declares is healthy — "enabled but starved"
+   is the failure that silently cost a whole session before. */
+function StrategyReadiness() {
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    api.getStrategies()
+      .then((d) => {
+        const active = d?.active_strategies || [];
+        setRows(
+          (d?.strategies || []).map((st) => {
+            const on = active.includes(st.name);
+            const dep = st.dependency_health || {};
+            const states = [
+              ...Object.values(dep.symbols || {}),
+              ...Object.values(dep.timeframes || {}),
+            ];
+            const bad = states.filter((v) => v !== 'OK');
+            return {
+              name: st.name,
+              label: (st.display_name || st.name).split('(')[0].trim(),
+              status: !on ? 'IDLE' : bad.length ? 'WAITING' : 'ARMED',
+              detail: !on
+                ? 'not in the active set'
+                : bad.length
+                ? `${bad.length}/${states.length} inputs not ready`
+                : (st.instrument_focus || []).join(' · ') || 'inputs ready',
+            };
+          }),
+        );
+      })
+      .catch((e) => setErr(e.message));
+  }, []);
+
+  if (err) return <Card><Empty>Could not load strategies — {err}</Empty></Card>;
+  if (!rows) return <SkeletonCard rows={2} />;
+
+  const tone = { ARMED: 'green', WAITING: 'amber', IDLE: '' };
+  return (
+    <div>
+      <SectionHeader
+        title="Ready for next session"
+        sub={`${rows.filter((r) => r.status === 'ARMED').length} armed · ${rows.length} registered`}
+      />
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-cardgap">
+        {rows.map((r) => {
+          const accent = STRATEGY_ACCENT[r.name] || 'ai';
+          const a = ACCENT_CLASSES[accent];
+          const t = tone[r.status];
+          return (
+            <Card key={r.name} hover className="!p-0 overflow-hidden">
+              <div className={`h-[3px] w-full ${r.status === 'IDLE' ? 'bg-line' : a.bg}`} />
+              <div className="p-cardpad">
+                <div className="flex items-start justify-between gap-2">
+                  <div className={`eyebrow ${r.status === 'IDLE' ? '' : a.text}`}>
+                    {r.name.replace(/_/g, ' ')}
+                  </div>
+                  <span
+                    className={`chip shrink-0 ${
+                      t === 'green' ? '!bg-green-soft !text-green !border-green/40'
+                      : t === 'amber' ? '!bg-amber-soft !text-amber !border-amber/40'
+                      : '!text-muted'
+                    }`}
+                  >
+                    {r.status === 'ARMED' && (
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-green mr-1 align-middle live-ring" />
+                    )}
+                    {r.status}
+                  </span>
+                </div>
+                <div className="font-disp text-f15 font-semibold text-ink mt-1.5 leading-snug">
+                  {r.label}
+                </div>
+                <div className="num text-f11 text-muted mt-1.5">{r.detail}</div>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* Home between sessions.
+ *
+ * This used to be a shield emoji, "Done for today." and two small tiles, which
+ * is most of what the screen shows for the ~17 hours a day the market is shut.
+ * The countdown is still the anchor, but the space around it now carries the
+ * three things worth knowing before the bell: how the last session ended, what
+ * is actually armed for the next one, and the pre-market read. */
 export function Locked({ s, onReadReport }) {
   const fsm = s.fsm || {};
-  const countdown = useUnlockCountdown();
+  const { text, secs, opensAt } = useUnlockCountdown();
+  const closed = (s.trades || []).filter((t) => t.status === 'CLOSED');
+  const wins = closed.filter((t) => (t.pnl || 0) > 0).length;
+  const flat = (s.positions || []).length === 0;
+  const brokerName = s.broker === 'dhan' ? 'DhanHQ' : 'Groww';
   const green = (fsm.day_pnl ?? 0) >= 0;
+
   return (
     <div className="space-y-cardgap">
-      <div className="text-center pt-8 pb-4">
-        <div
-          className="w-[104px] h-[104px] mx-auto mb-6 rounded-full grid place-items-center text-lock"
-          style={{ background: green ? 'rgb(var(--c-green) / 0.14)' : 'rgb(var(--c-red) / 0.14)' }}
-        >
-          {green ? '🛡' : '🛑'}
-        </div>
-        <h2 className="font-disp text-lock font-bold tracking-tight">Done for today.</h2>
-        <p className="text-body text-ink-2 mt-2.5 leading-relaxed">
-          {fsm.lock_reason || 'The day is locked.'}
-          <br />
-          Entries reopen next session.
-        </p>
-      </div>
+      <Card wash={green ? 'green' : 'red'} className="overflow-hidden">
+        <div className="flex flex-col sm:flex-row items-center gap-5 sm:gap-7">
+          <div className="relative grid place-items-center shrink-0">
+            <CountdownRing secs={secs} />
+            <div className="absolute inset-0 grid place-items-center text-center">
+              <div>
+                <div className="num text-contract font-semibold text-ink tracking-tight">{text}</div>
+                <div className="eyebrow mt-1">until open</div>
+              </div>
+            </div>
+          </div>
 
-      <div className="grid grid-cols-2 gap-2.5">
-        <div className="card !p-3.5">
-          <Eyebrow>Day result</Eyebrow>
-          <div className={`num text-contract font-semibold mt-1.5 ${pnlColor(fsm.day_pnl)}`}>
-            {rupee(fsm.day_pnl, true)}
+          <div className="min-w-0 flex-1 text-center sm:text-left">
+            <Eyebrow>Session closed</Eyebrow>
+            <h2 className="font-disp text-contract font-semibold tracking-tight mt-1.5">
+              {fsm.lock_reason || 'The day is locked.'}
+            </h2>
+            <p className="num text-f11 text-muted mt-1.5">
+              Reopens{' '}
+              {opensAt
+                ? opensAt.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+                : '—'}{' '}
+              · 09:15 IST
+            </p>
+
+            <div className="grid grid-cols-3 gap-2 mt-4">
+              <StatTile
+                label="Last session"
+                value={rupee(fsm.day_pnl, true)}
+                tone={pnlColor(fsm.day_pnl)}
+                accent={green ? 'green' : 'red'}
+              />
+              <StatTile label="Trades" value={closed.length} accent="violet" />
+              <StatTile
+                label="Win rate"
+                value={closed.length ? `${Math.round((wins / closed.length) * 100)}%` : '—'}
+                accent="cyan"
+              />
+            </div>
           </div>
         </div>
-        <div className="card !p-3.5">
-          <Eyebrow>Unlocks in</Eyebrow>
-          <div className="num text-contract font-semibold mt-1.5">{countdown}</div>
-        </div>
-      </div>
+      </Card>
+
+      {/* Exposure is the one thing that must never be ambiguous overnight. */}
+      <Banner tone={flat ? 'ink' : 'amber'}>
+        <span className={`inline-block w-1.5 h-1.5 rounded-full mr-2 ${flat ? 'bg-green' : 'bg-amber'}`} />
+        {flat
+          ? 'Flat — zero positions, zero resting orders on exchange.'
+          : `${s.positions.length} position(s) still open · broker-side stops resting on ${brokerName}.`}
+      </Banner>
+
+      <StrategyReadiness />
 
       <PremarketCard />
 
-      <button className="btn-primary" onClick={onReadReport}>
-        Read day-end report
-      </button>
-      <a
-        className="btn-ghost block text-center"
-        href={s.broker === 'dhan' ? 'https://web.dhan.co/' : 'https://groww.in/user/profile/settings'}
-        target="_blank"
-        rel="noreferrer"
-      >
-        {s.broker === 'dhan' ? 'DhanHQ Portal ↗' : 'Groww kill switch ↗'}
-      </a>
-
-      <Banner tone="ink">
-        {(s.positions || []).length > 0
-          ? `Your broker-side stops remain resting on ${s.broker === 'dhan' ? 'DhanHQ' : 'Groww'}.`
-          : 'All positions flat. Zero active resting orders on exchange.'}
-      </Banner>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <button className="btn-primary" onClick={onReadReport}>
+          Read day-end report
+        </button>
+        <a
+          className="btn-ghost block text-center"
+          href={s.broker === 'dhan' ? 'https://web.dhan.co/' : 'https://groww.in/user/profile/settings'}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {brokerName} portal ↗
+        </a>
+      </div>
     </div>
   );
 }
@@ -1972,12 +2223,31 @@ export function DataScreen({ s, onRefresh }) {
   const activeStrats = s?.algo?.active_strategies || [];
   const h = s?.health || {};
 
+  const [intelReport, setIntelReport] = useState(null);
+
   useEffect(() => {
     api.getDataStatus().then(setDataStatus).catch(() => {});
     api.getStrategies().then((data) => {
       if (data?.strategies) setStrategies(data.strategies);
     }).catch(() => {});
+    /* Server-cached, so reading it here costs nothing after the first build. */
+    api.getPremarketReport().then(setIntelReport).catch(() => {});
   }, [s]);
+
+  /* Whether the briefing was actually written by the model, or is the
+     rule-based fallback wearing the same clothes. */
+  const intel = (() => {
+    if (!intelReport) return { ok: true, detail: 'checking…' };
+    const engine = intelReport.engine || 'template';
+    const stale = (intelReport.data_flags || []).some((f) => /placeholder/i.test(f));
+    if (engine.startsWith('groq:')) {
+      return {
+        ok: !stale,
+        detail: stale ? `${engine.split(':')[1]} · on placeholder levels` : engine.split(':')[1],
+      };
+    }
+    return { ok: false, detail: 'rule-based fallback — model did not run' };
+  })();
 
   const onFetchCandles = async () => {
     setLoadingCandles(true);
@@ -2156,10 +2426,14 @@ export function DataScreen({ s, onRefresh }) {
               .map(([k, v]) => `${k} ${v ? 'ok' : 'stale'}`)
               .join(' · ')}
           />
+          {/* The old row here read `state.llm`, which the backend stopped
+              emitting when the LLM config was removed — so it permanently
+              reported "ok · 0/10 calls" whatever was happening. Provenance
+              now comes from the report itself. */}
           <HealthRow
-            label="LLM Intelligence"
-            ok={(s?.llm?.failures ?? 0) === 0}
-            detail={`${s?.llm?.calls_today ?? 0}/${s?.llm?.cap ?? 10} calls`}
+            label="Pre-market intelligence"
+            ok={intel.ok}
+            detail={intel.detail}
           />
         </div>
       </Card>
@@ -2364,18 +2638,48 @@ export function DayEnd() {
   );
 }
 
+/* ------------------------------------------------- Pre-market intelligence */
+
+/* A spot price between its put and call wall, as a rail. Reading three numbers
+   off a row of text never showed which side of the range price was sitting
+   on. */
+function WallRail({ label, spot, support, resistance, muted }) {
+  const span = (resistance ?? 0) - (support ?? 0);
+  const pct = span > 0 ? Math.max(0, Math.min(100, (((spot ?? 0) - support) / span) * 100)) : 50;
+  const fmt = (v) => (v == null ? '—' : Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 }));
+  return (
+    <div className={muted ? 'opacity-60' : ''}>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="eyebrow">{label}</span>
+        <span className="num text-sec font-medium text-ink">{fmt(spot)}</span>
+      </div>
+      <div className="relative h-1.5 mt-2 rounded-pill bg-well border border-line/70">
+        <div
+          className="absolute top-1/2 -translate-y-1/2 -ml-[5px] w-2.5 h-2.5 rounded-full bg-ai border-2 border-card"
+          style={{ left: `${pct}%` }}
+        />
+      </div>
+      <div className="flex justify-between num text-f9 text-muted mt-1.5">
+        <span className="text-green">put {fmt(support)}</span>
+        <span className="text-red">call {fmt(resistance)}</span>
+      </div>
+    </div>
+  );
+}
+
 function PremarketCard() {
   const [pm, setPm] = useState(null);
+  const [err, setErr] = useState('');
   const [open, setOpen] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  const loadReport = async () => {
+  const loadReport = async (refresh = false) => {
     setLoading(true);
+    setErr('');
     try {
-      const data = await api.getPremarketReport();
-      setPm(data);
+      setPm(await api.getPremarketReport(refresh));
     } catch (e) {
-      console.error(e);
+      setErr(e.message);
     } finally {
       setLoading(false);
     }
@@ -2385,97 +2689,158 @@ function PremarketCard() {
     loadReport();
   }, []);
 
-  const biasColor =
-    pm?.bias === 'BULLISH'
-      ? 'bg-green text-paper border-green'
-      : pm?.bias === 'BEARISH'
-      ? 'bg-red text-paper border-red'
-      : 'bg-ink text-paper border-ink';
+  /* The backend flags when a level came from a hardcoded fallback instead of a
+     quote. That caveat invalidates every number below it, so it leads the card
+     rather than sitting in a footnote. */
+  const flags = pm?.data_flags || [];
+  const placeholderFlag = flags.find((f) => /placeholder/i.test(f));
+  const fallbackFlag = flags.find((f) => /fallback/i.test(f));
+  const caveats = flags.filter((f) => f !== placeholderFlag && f !== fallbackFlag);
+  const byModel = (pm?.engine || '').startsWith('groq:');
 
-  const confColor =
-    pm?.confidence === 'HIGH'
-      ? 'bg-green/10 text-green border-green/30'
-      : pm?.confidence === 'LOW'
-      ? 'bg-amber/10 text-amber border-amber/30'
-      : 'bg-ink/10 text-ink border-ink/30';
+  const biasTone = {
+    BULLISH: 'green', BEARISH: 'red', VOLATILE: 'amber', NEUTRAL: '',
+  }[pm?.bias] || '';
+  const chipCls = (t) =>
+    t === 'green' ? '!bg-green-soft !text-green !border-green/40'
+    : t === 'red' ? '!bg-red-soft !text-red !border-red/40'
+    : t === 'amber' ? '!bg-amber-soft !text-amber !border-amber/40'
+    : '';
+
+  if (err && !pm) {
+    return (
+      <Card>
+        <Eyebrow>Pre-market intelligence</Eyebrow>
+        <Empty>Could not load the briefing — {err}</Empty>
+        <button className="btn-ghost mt-3" onClick={loadReport} disabled={loading}>
+          {loading ? 'Retrying…' : 'Retry'}
+        </button>
+      </Card>
+    );
+  }
+  if (!pm) return <SkeletonCard rows={3} />;
+
+  const gapUp = (pm.gap_points || 0) > 0;
 
   return (
-    <Card>
-      <div className="flex justify-between items-center cursor-pointer" onClick={() => setOpen(!open)}>
-        <div>
-          <Eyebrow>Pre-Market Intelligence</Eyebrow>
-          {pm ? (
-            <div className="font-disp font-semibold text-sec mt-1 flex items-center gap-2 flex-wrap">
-              <span>{pm.opening_gap} ({pm.gap_points > 0 ? `+${pm.gap_points} pts` : `${pm.gap_points || 0} pts`})</span>
-              <span className={`chip text-xs px-2 py-0.5 ${biasColor}`}>{pm.bias}</span>
-              {pm.confidence && (
-                <span className={`chip text-xs px-2 py-0.5 border ${confColor}`}>
-                  {pm.confidence} CONFIDENCE
-                </span>
-              )}
-            </div>
-          ) : (
-            <div className="num text-sec text-muted mt-1">Loading intelligence...</div>
+    <Card wash={placeholderFlag || fallbackFlag ? '' : 'ai'} className="!p-0 overflow-hidden">
+      <button
+        className="w-full text-left px-cardpad pt-cardpad pb-3 flex items-start justify-between gap-3"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+      >
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-ai ai-pulse shrink-0" />
+            <Eyebrow>Pre-market intelligence</Eyebrow>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap mt-2">
+            <span className="font-disp text-f15 font-semibold text-ink">
+              {pm.opening_gap === 'FLAT' ? 'Flat open' : pm.opening_gap}
+            </span>
+            {pm.gap_points ? (
+              <span className={`num text-sec ${gapUp ? 'text-green' : 'text-red'}`}>
+                {gapUp ? '▲' : '▼'} {Math.abs(pm.gap_points)} pts
+              </span>
+            ) : null}
+            <span className={`chip ${chipCls(biasTone)}`}>{pm.bias}</span>
+            {pm.confidence && <span className="chip">{pm.confidence} CONF</span>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span
+            className={`chip ${byModel ? '!bg-violet-soft !text-violet !border-violet/40' : '!text-muted'}`}
+            title={pm.generated_at ? `generated ${pm.generated_at}` : ''}
+          >
+            {byModel ? pm.engine.split(':')[1].split('-')[0].toUpperCase() : 'RULE-BASED'}
+          </span>
+          <span className="num text-muted text-sec">{open ? '▲' : '▼'}</span>
+        </div>
+      </button>
+
+      {(placeholderFlag || fallbackFlag) && (
+        <div className="mx-cardpad mb-3 px-3 py-2.5 rounded-block bg-amber-soft border border-amber/40 space-y-1.5">
+          <div className="num text-f10 uppercase tracking-wider text-amber font-semibold">
+            {placeholderFlag ? 'Not a live market read' : 'Not a model read'}
+          </div>
+          {placeholderFlag && (
+            <p className="text-sec text-amber leading-relaxed opacity-90">{placeholderFlag}</p>
+          )}
+          {fallbackFlag && (
+            <p className="text-sec text-amber leading-relaxed opacity-90">{fallbackFlag}</p>
           )}
         </div>
-        <button className="text-muted text-lg">{open ? '▲' : '▼'}</button>
-      </div>
+      )}
 
-      {open && pm && (
-        <div className="mt-3 pt-3 border-t border-line space-y-3">
+      {open && (
+        <div className="px-cardpad pb-cardpad space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-line">
+            <WallRail
+              label="NIFTY"
+              spot={pm.nifty_ltp}
+              support={pm.nifty_support}
+              resistance={pm.nifty_resistance}
+              muted={Boolean(placeholderFlag)}
+            />
+            <WallRail
+              label="BANKNIFTY"
+              spot={pm.banknifty_ltp}
+              support={pm.banknifty_support}
+              resistance={pm.banknifty_resistance}
+              muted={Boolean(placeholderFlag)}
+            />
+            <StatTile
+              label="India VIX"
+              value={num(pm.vix, 2)}
+              accent={pm.vix >= 16 ? 'amber' : 'teal'}
+              className={placeholderFlag ? 'opacity-60' : ''}
+            />
+          </div>
+
           <p className="text-body text-ink-2 leading-relaxed">{pm.summary}</p>
 
-          <div className="grid grid-cols-2 gap-2 text-xs num py-2 bg-line/20 rounded-block">
-            <div className="px-2">
-              <span className="text-muted block">NIFTY Put / Call Wall</span>
-              <span className="font-semibold">{pm.nifty_support} – {pm.nifty_resistance}</span>
-            </div>
-            <div className="px-2">
-              <span className="text-muted block">BANKNIFTY Range</span>
-              <span className="font-semibold">{pm.banknifty_support} – {pm.banknifty_resistance}</span>
-            </div>
-          </div>
-
-          <div>
-            <span className="text-xs text-muted block mb-1">Sectors &amp; Specific Macro Drivers:</span>
-            <div className="space-y-1.5 mt-1">
-              {(pm.sectors_to_watch || []).map((sec, i) => {
-                const sName = typeof sec === 'string' ? sec : sec.sector;
-                const sReason = typeof sec === 'string' ? 'Macro read-through' : sec.reason;
-                return (
-                  <div key={i} className="text-xs bg-line/20 p-2.5 rounded-block flex justify-between items-center gap-2">
-                    <span className="font-bold text-ink">{sName}</span>
-                    <span className="text-muted text-right text-xs">{sReason}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {(pm.data_flags || []).length > 0 && (
-            <div className="p-2.5 rounded-block bg-amber/10 border border-amber/20 text-xs text-amber leading-relaxed">
-              <strong>Data Caveats:</strong> {pm.data_flags.join(' · ')}
+          {(pm.sectors_to_watch || []).length > 0 && (
+            <div>
+              <Eyebrow>Sectors in play</Eyebrow>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                {pm.sectors_to_watch.map((sec, i) => {
+                  const name = typeof sec === 'string' ? sec : sec.sector;
+                  const why = typeof sec === 'string' ? 'Macro read-through' : sec.reason;
+                  return (
+                    <div key={i} className="well px-3 py-2.5">
+                      <div className="font-disp text-sec font-semibold text-ink">{name}</div>
+                      <div className="num text-f10 text-muted mt-0.5">{why}</div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
-          <div className="p-2.5 rounded-block bg-ai/10 border border-ai/20 text-xs text-ink leading-relaxed">
-            <strong className="text-ai block mb-0.5">Pre-Market Risk Advisory (09:15–09:35 AM):</strong>
-            {pm.actionable_advice}
-          </div>
+          {pm.actionable_advice && (
+            <div className="px-3 py-2.5 rounded-block bg-ai-soft border border-ai/30">
+              <div className="num text-f10 uppercase tracking-wider text-ai font-semibold">
+                Opening advisory · 09:15–09:35
+              </div>
+              <p className="text-sec text-ink-2 mt-1 leading-relaxed">{pm.actionable_advice}</p>
+            </div>
+          )}
 
-          <button
-            className="btn bg-ink text-paper text-xs py-2.5 w-full flex items-center justify-center gap-1.5 font-bold"
-            onClick={(e) => {
-              e.stopPropagation();
-              loadReport();
-            }}
-            disabled={loading}
-          >
-            {loading ? 'Analyzing Live Macro & Financial News...' : 'Run Morning Intelligence Now ⚡'}
+          {caveats.length > 0 && (
+            <div className="num text-f10 text-muted leading-relaxed">
+              Caveats: {caveats.join(' · ')}
+            </div>
+          )}
+          {pm.generated_at && (
+            <div className="num text-f9 text-muted">Generated {pm.generated_at.replace('T', ' ')} IST</div>
+          )}
+
+          <button className="btn-ghost" onClick={() => loadReport(true)} disabled={loading}>
+            {loading ? 'Analysing macro & news…' : 'Re-run intelligence ⚡'}
           </button>
+          {err && <div className="num text-f10 text-red">Refresh failed — {err}</div>}
         </div>
       )}
     </Card>
   );
 }
-

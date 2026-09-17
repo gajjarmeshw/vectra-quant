@@ -26,7 +26,9 @@ async function req(path, opts = {}) {
 export const getState = () => req('/state');
 export const getConfig = () => req('/config');
 export const getDayEnd = (date = '') => req(`/report/dayend${date ? `?date=${date}` : ''}`);
-export const getPremarketReport = () => req('/report/premarket');
+/* Cached server-side for 10 minutes; `refresh` is the explicit re-run. */
+export const getPremarketReport = (refresh = false) =>
+  req(`/report/premarket${refresh ? '?refresh=1' : ''}`);
 export const getJournal = () => req('/report/journal');
 
 /* ---------------------------------------------------------------- writes */

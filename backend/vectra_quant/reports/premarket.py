@@ -5,10 +5,17 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from vectra_quant.core.session_clock import session_date
+from vectra_quant.core.session_clock import now_ist, session_date
 from vectra_quant.logging_setup import get
 
 log = get("reports.premarket")
+
+GROQ_MODEL = "llama-3.3-70b-versatile"
+
+# A full build hits an RSS feed, five Yahoo endpoints and a Groq completion.
+# The PWA mounts the card on every Home render, so without a cache a tab switch
+# was worth six network round-trips and one paid LLM call.
+CACHE_TTL_S = 600
 
 
 @dataclass
@@ -29,6 +36,8 @@ class PreMarketReport:
     summary: str
     actionable_advice: str
     data_flags: list[str]
+    engine: str                   # "groq:<model>" when the LLM synthesised it, else "template"
+    generated_at: str
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -118,10 +127,23 @@ def build_premarket_report(st: Any) -> dict[str, Any]:
     """Synthesize pre-market market data, option walls, global cues, live news, and Groq LLM intelligence."""
     today = session_date()
 
-    # Get live quotes
-    nifty_px = float(st.feed.price("NIFTY") or 24750.0)
-    banknifty_px = float(st.feed.price("BANKNIFTY") or 52100.0)
-    vix = float(st.feed.price("INDIAVIX") or 14.5)
+    # Get live quotes. The placeholders keep the report renderable when the
+    # feed is down, but every downstream number -- the walls, the summary, the
+    # LLM's whole input -- is then derived from a number nobody quoted. Track
+    # which ones were invented so the UI can say so instead of presenting them
+    # as a market read.
+    stale_inputs: list[str] = []
+
+    def _px(symbol: str, placeholder: float) -> float:
+        live = st.feed.price(symbol)
+        if live:
+            return float(live)
+        stale_inputs.append(symbol)
+        return placeholder
+
+    nifty_px = _px("NIFTY", 24750.0)
+    banknifty_px = _px("BANKNIFTY", 52100.0)
+    vix = _px("INDIAVIX", 14.5)
 
     # Option wall estimates
     nifty_step = 50.0
@@ -150,6 +172,14 @@ def build_premarket_report(st: Any) -> dict[str, Any]:
     sectors = [{"sector": "Banking", "reason": "Option Put Wall support"}, {"sector": "IT", "reason": "Global tech sentiment"}]
     advice = "Wait for opening range establishment (09:15–09:35 AM) before taking momentum trades."
     data_flags: list[str] = []
+    # Until proven otherwise this report is the rule-based fallback, not AI
+    # output. The two used to be indistinguishable on screen.
+    engine = "template"
+
+    if stale_inputs:
+        data_flags.append(
+            f"No live quote for {', '.join(stale_inputs)} — levels below are placeholders, not a market read"
+        )
 
     if cues["dow_change_pct"] is None:
         data_flags.append("Dow Jones overnight data not provided")
@@ -183,7 +213,7 @@ def build_premarket_report(st: Any) -> dict[str, Any]:
                     "https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization": f"Bearer {groq_key}"},
                     json={
-                        "model": "llama-3.3-70b-versatile",
+                        "model": GROQ_MODEL,
                         "messages": [
                             {"role": "system", "content": PREMARKET_SYSTEM_PROMPT},
                             {"role": "user", "content": prompt},
@@ -210,8 +240,22 @@ def build_premarket_report(st: Any) -> dict[str, Any]:
                     parsed_flags = parsed.get("data_flags", [])
                     if isinstance(parsed_flags, list):
                         data_flags.extend([str(f) for f in parsed_flags])
+                    engine = f"groq:{GROQ_MODEL}"
+                else:
+                    # Previously swallowed without a word, so a rate-limited or
+                    # unauthorised key looked exactly like a healthy run.
+                    log.warning(
+                        "Groq pre-market synthesis returned HTTP %s, using fallback", r.status_code
+                    )
         except Exception as exc:
             log.warning("Groq pre-market synthesis failed, using fallback: %s", exc)
+
+    if engine == "template":
+        data_flags.append(
+            "AI synthesis unavailable — this is the rule-based fallback, not a model read"
+            if groq_key
+            else "No AI key configured — this is the rule-based fallback, not a model read"
+        )
 
     report = PreMarketReport(
         date=today,
@@ -229,6 +273,25 @@ def build_premarket_report(st: Any) -> dict[str, Any]:
         sectors_to_watch=sectors,
         summary=summary,
         actionable_advice=advice,
-        data_flags=list(set(data_flags)),
+        data_flags=list(dict.fromkeys(data_flags)),  # dedupe, order-preserving
+        engine=engine,
+        generated_at=now_ist().isoformat(timespec="seconds"),
     )
     return report.as_dict()
+
+
+def get_premarket_report(st: Any, *, force: bool = False) -> dict[str, Any]:
+    """Cached wrapper around :func:`build_premarket_report`.
+
+    The underlying builder stays pure and uncached so it can be tested
+    directly; this is the one callers should use.
+    """
+    cached = getattr(st, "_premarket_cache", None)
+    if not force and cached:
+        report, built_at = cached
+        if (now_ist() - built_at).total_seconds() < CACHE_TTL_S and report.get("date") == session_date():
+            return {**report, "cached": True}
+
+    report = build_premarket_report(st)
+    st._premarket_cache = (report, now_ist())
+    return {**report, "cached": False}
