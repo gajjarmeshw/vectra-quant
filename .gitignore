@@ -22,3 +22,4 @@ pwa/.env.production
 /tools/
 backend/data/
 *.tar.gz*
+/orderflow_2*/
