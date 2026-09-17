@@ -143,6 +143,7 @@ class BreadthPaperTrader:
             return rec
 
         position: BreadthPaperPosition | None = None
+        ever_evaluated = False
 
         while not self._stop:
             now = now_ist()
@@ -155,6 +156,7 @@ class BreadthPaperTrader:
 
             if in_window and enough_data:
                 self._breadth_series.append((now, breadth))
+                ever_evaluated = True
 
             if position is None and in_window and enough_data:
                 trigger = detect_breadth_crossing(self._breadth_series, theta_cross=self.cfg.theta_cross)
@@ -196,7 +198,12 @@ class BreadthPaperTrader:
             self._save(rec)
         elif position is None and not rec.decision:
             rec.skipped = True
-            rec.skip_reason = "NO_QUALIFYING_CROSSING_BY_WINDOW_CLOSE"
+            # Distinguish "ran all day and genuinely found nothing" from
+            # "never got a chance to look" (e.g. started after
+            # force_exit_time, or after the session ended for the day) --
+            # the same string for both would misleadingly suggest a full,
+            # uneventful day's evaluation happened when it didn't.
+            rec.skip_reason = "NO_QUALIFYING_CROSSING_BY_WINDOW_CLOSE" if ever_evaluated else "NEVER_ENTERED_SIGNAL_WINDOW"
             self._save(rec)
 
         return rec

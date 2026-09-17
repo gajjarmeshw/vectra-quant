@@ -177,12 +177,17 @@ def test_thunderbolt_status_returns_nulls_when_files_missing(tmp_path, monkeypat
 
 
 def test_thunderbolt_status_reads_real_files(tmp_path, monkeypatch):
-    from datetime import date
     import json as _json
+
+    from vectra_quant.core.session_clock import session_date
 
     root = tmp_path / "orderflow"
     monkeypatch.setenv("ORDERFLOW_RECORDS_ROOT", str(root))
-    today = date.today().isoformat()
+    # The route resolves "today" via session_date() (IST-aware), not naive
+    # date.today() (reads UTC on this host) -- those two disagree for the
+    # first 5.5 hours of every IST day (00:00-05:29 IST is still "yesterday"
+    # in UTC), which silently broke this exact test during that window.
+    today = session_date()
 
     health_dir = root / "recorder_health"
     health_dir.mkdir(parents=True)
@@ -224,12 +229,13 @@ def test_breadth_status_returns_nulls_when_files_missing(tmp_path, monkeypatch):
 
 
 def test_breadth_status_reads_real_files(tmp_path, monkeypatch):
-    from datetime import date
     import json as _json
+
+    from vectra_quant.core.session_clock import session_date
 
     root = tmp_path / "orderflow"
     monkeypatch.setenv("ORDERFLOW_RECORDS_ROOT", str(root))
-    today = date.today().isoformat()
+    today = session_date()  # see test_thunderbolt_status_reads_real_files's comment on why not date.today()
 
     health_dir = root / "recorder_health"
     health_dir.mkdir(parents=True)

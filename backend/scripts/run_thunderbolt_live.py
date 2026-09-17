@@ -31,7 +31,6 @@ import asyncio
 import logging
 import os
 import sys
-from datetime import date, datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -40,6 +39,7 @@ from vectra_quant import config as _config  # noqa: F401 -- side effect: loads .
 from dhanhq import DhanContext
 
 from vectra_quant.brokers.dhan import DhanAdapter
+from vectra_quant.core.session_clock import now_ist
 from vectra_quant.orderflow.aggregator import SessionAggregator
 from vectra_quant.orderflow.config import DEFAULT_THUNDERBOLT_CFG
 from vectra_quant.orderflow.contract import resolve_current_nifty_future
@@ -90,7 +90,7 @@ async def main() -> None:
         return master._all  # noqa: SLF001 -- this script owns both objects; contract.py wants the raw list
 
     def instrument_resolver(right: str, strike: float) -> str:
-        today = date.today()
+        today = now_ist().date()
         expiry = master.nearest_expiry("NIFTY", on_or_after=today.isoformat())
         inst = master.find_option("NIFTY", expiry, strike, right)
         if inst is None:
@@ -118,7 +118,7 @@ async def main() -> None:
     )
     recorder_task = asyncio.create_task(recorder.run_forever())
 
-    current_future = resolve_current_nifty_future(master._all, today=date.today())  # noqa: SLF001
+    current_future = resolve_current_nifty_future(master._all, today=now_ist().date())  # noqa: SLF001
     trader = ThunderboltPaperTrader(
         aggregator=recorder.aggregator, quote_fn=quote_fn, instrument_resolver_fn=instrument_resolver,
         cfg=DEFAULT_THUNDERBOLT_CFG, records_root=RECORDS_ROOT,
@@ -141,7 +141,7 @@ async def main() -> None:
 
     from vectra_quant.orderflow.storage import write_session_context
 
-    write_session_context(RECORDS_ROOT, date.today(), {
+    write_session_context(RECORDS_ROOT, now_ist().date(), {
         "recent_realized_vols": recent_vols,
         "recent_nifty_daily_candles": recent_candles,
         "prior_session_vix": prior_vix,
@@ -150,7 +150,7 @@ async def main() -> None:
     })
 
     rec = await trader.run_session(
-        session_date=date.today(), recent_realized_vols=recent_vols,
+        session_date=now_ist().date(), recent_realized_vols=recent_vols,
         prior_session_vix=prior_vix, spot_fn=spot_fn,
     )
     log.info("Session finished: skipped=%s reason=%s position=%s", rec.skipped, rec.skip_reason, rec.position)

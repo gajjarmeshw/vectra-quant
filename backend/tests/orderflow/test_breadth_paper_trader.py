@@ -85,6 +85,27 @@ async def test_run_session_no_signal_when_flat(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_run_session_started_after_hours_gets_distinct_skip_reason(tmp_path):
+    """Starting the script after today's force_exit_time (e.g. late at
+    night) must not claim a full day's evaluation happened -- it never got
+    a single chance to look."""
+    cfg = BreadthCfg(
+        signal_window_start=time(0, 0), signal_window_end=time(23, 59),
+        force_exit_time=(now_ist() - timedelta(seconds=1)).time(),  # already in the past
+        theta_cross=0.1, min_stocks_reporting=10, bucket_seconds=0.05,
+    )
+    trader = BreadthPaperTrader(
+        top_of_book_providers=[flat_book_provider], quote_fn=fake_quote,
+        instrument_resolver_fn=fake_resolver, spot_fn=fake_spot, cfg=cfg,
+        records_root=str(tmp_path),
+    )
+    rec = await trader.run_session(session_date=date(2026, 9, 17), poll_seconds=0.05)
+    assert rec.position is None
+    assert rec.skipped is True
+    assert rec.skip_reason == "NEVER_ENTERED_SIGNAL_WINDOW"
+
+
+@pytest.mark.asyncio
 async def test_already_has_call_today_is_idempotent(tmp_path):
     cfg = BreadthCfg()
     trader1 = BreadthPaperTrader([flat_book_provider], fake_quote, fake_resolver, fake_spot, cfg, str(tmp_path))

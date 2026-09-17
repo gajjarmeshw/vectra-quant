@@ -33,7 +33,6 @@ import logging
 import os
 import sys
 import time as time_module
-from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -44,6 +43,7 @@ from dhanhq import DhanContext
 
 from vectra_quant.brokers.base import Instrument
 from vectra_quant.brokers.dhan import DhanAdapter
+from vectra_quant.core.session_clock import now_ist
 from vectra_quant.orderflow.breadth_paper_trader import BreadthPaperTrader
 from vectra_quant.orderflow.config import DEFAULT_BREADTH_CFG, DEFAULT_CFG
 from vectra_quant.orderflow.contract import resolve_nifty_option_window
@@ -93,7 +93,7 @@ async def main() -> None:
     batch0, batch1 = equities[:MAX_INSTRUMENTS_PER_CONNECTION], equities[MAX_INSTRUMENTS_PER_CONNECTION:]
 
     def instrument_resolver(right: str, strike: float) -> str:
-        today = date.today()
+        today = now_ist().date()
         expiry = master.nearest_expiry("NIFTY", on_or_after=today.isoformat())
         inst = master.find_option("NIFTY", expiry, strike, right)
         if inst is None:
@@ -116,7 +116,7 @@ async def main() -> None:
     spot = await asyncio.to_thread(spot_fn)
     log.info("Current NIFTY spot: %.1f", spot)
 
-    option_window = resolve_nifty_option_window(master, spot=spot, on_or_after=date.today().isoformat())
+    option_window = resolve_nifty_option_window(master, spot=spot, on_or_after=now_ist().date().isoformat())
     log.info("Resolved %d option instruments around spot %.1f.", len(option_window), spot)
     if len(option_window) > MAX_INSTRUMENTS_PER_CONNECTION:
         option_window = option_window[:MAX_INSTRUMENTS_PER_CONNECTION]
@@ -140,7 +140,7 @@ async def main() -> None:
         cfg=DEFAULT_BREADTH_CFG, records_root=RECORDS_ROOT, lot_size=lot_size,
     )
 
-    rec = await trader.run_session(session_date=date.today())
+    rec = await trader.run_session(session_date=now_ist().date())
     log.info("Session finished: skipped=%s reason=%s position=%s", rec.skipped, rec.skip_reason, rec.position)
 
     for r in (recorder_eq0, recorder_eq1, recorder_opt):
