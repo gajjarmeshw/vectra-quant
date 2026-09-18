@@ -157,9 +157,18 @@ class MultiInstrumentDepthRecorder:
         }
 
     async def run_forever(self) -> None:
+        if not self.cfg.allow_live_recording:
+            # See DepthRecorder.run_forever: exceeding the account's depth-socket
+            # budget disconnects the EC2 capture service's oldest live feed.
+            raise RuntimeError(
+                f"MultiInstrumentDepthRecorder.run_forever() refused for '{self._label}': "
+                "live depth recording is disabled (cfg.allow_live_recording=False). Set "
+                "ORDERFLOW_ALLOW_LIVE_RECORDING=1 only on the host that owns the budget."
+            )
+
         from dhanhq import FullDepth  # local import: optional dependency
 
-        exch_and_sid = [(_exchange_code(i.exchange, i.segment), i.exchange_token) for i in self.instruments]
+        exch_and_sid =[(_exchange_code(i.exchange, i.segment), i.exchange_token) for i in self.instruments]
 
         backoff_idx = 0
         while not self._stop:

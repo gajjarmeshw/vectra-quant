@@ -8,6 +8,7 @@ strategy's known-good settings."
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import time
 
@@ -60,6 +61,16 @@ class OrderFlowCfg:
     reconnect_backoff_seconds: tuple[float, ...] = (1.0, 2.0, 5.0, 10.0, 30.0)
     ws_ping_timeout_seconds: float = 40.0     # server closes after 40s without a response
     max_depth_connections: int = 5            # budget: >5 sockets disconnects the oldest (code 805)
+
+    # Dhan disconnects the OLDEST socket on the account once more than
+    # `max_depth_connections` depth sockets are open (error 805). The EC2
+    # capture service already holds that full budget during market hours, so a
+    # recorder started anywhere else on the same credentials silently kills a
+    # production feed. Default OFF: opening a live depth socket is opt-in, set
+    # via ORDERFLOW_ALLOW_LIVE_RECORDING=1 on the host that owns the budget.
+    allow_live_recording: bool = field(
+        default_factory=lambda: os.getenv("ORDERFLOW_ALLOW_LIVE_RECORDING", "") == "1"
+    )
 
     extra: dict[str, float] = field(default_factory=dict)  # escape hatch for anything added later
 

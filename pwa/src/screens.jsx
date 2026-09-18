@@ -1094,16 +1094,22 @@ function StrategyDetail({ st, isActive, saving, onToggle }) {
               ))
             ))}
 
+          {/* Only `live_only` is genuinely un-backtestable. The option-structure
+              modes DO have historical backtests, they just run on dedicated
+              engines rather than the per-bar one — saying "not backtestable"
+              for those was wrong and hid working functionality. */}
           <Check
-            ok={mode === 'standard'}
-            warn={mode !== 'standard'}
-            label={mode === 'standard' ? 'Backtestable' : 'Not backtestable on the bar engine'}
+            ok={mode !== 'live_only'}
+            warn={mode === 'live_only'}
+            label={mode === 'live_only' ? 'Not backtestable — live order flow only' : 'Backtestable'}
             detail={
               mode === 'standard'
                 ? 'Runs on the per-bar backtest engine from the Backtest tab.'
                 : mode === 'live_only'
                 ? 'Depends on live 20-depth order flow, which no bar series can reconstruct. Validate it from recorded depth instead.'
-                : 'Multi-day option structure — the per-bar engine cannot model it.'
+                : mode === 'intraday_short_vol'
+                ? 'Same-session option structure — runs on the dedicated short-volatility engine from the Backtest tab.'
+                : 'Multi-day option structure — runs on the dedicated weekly-spread engine from the Backtest tab.'
             }
           />
         </div>
@@ -2206,6 +2212,23 @@ export function Backtest({ liveJob } = {}) {
                 <span className="text-red">{rupee(res.max_drawdown)}</span>
               </div>
             </div>
+
+            {/* Single worst/best session. For fat-tailed structures (short
+                premium especially) the worst single day is the number that
+                actually decides position sizing — averages hide it. Only
+                rendered when the engine reports it. */}
+            {(res.worst_day != null || res.best_day != null) && (
+              <div className="grid grid-cols-2 gap-2 text-center text-xs num py-2 border-t border-hair">
+                <div>
+                  <span className="text-muted block text-f11">Worst Session</span>
+                  <span className="text-red font-semibold">{rupee(res.worst_day)}</span>
+                </div>
+                <div>
+                  <span className="text-muted block text-f11">Best Session</span>
+                  <span className={pnlColor(res.best_day)}>{rupee(res.best_day, true)}</span>
+                </div>
+              </div>
+            )}
           </Card>
 
           {/* Equity Curve */}

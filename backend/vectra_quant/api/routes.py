@@ -869,6 +869,68 @@ async def submit_backtest_run(request: Request) -> dict[str, Any]:
                 ),
             }
 
+        # short_vol is a two-leg option structure priced off the real chain with
+        # its own entry/exit clocks and per-leg costs -- BacktestEngine's candle
+        # loop and single directional position can't express it, so it runs
+        # through the dedicated ShortVolEngine (same pattern as weekly_multiday).
+        if getattr(strat, "EXECUTION_MODE", None) == "intraday_short_vol":
+            from vectra_quant.backtest.short_vol_engine import NIFTY_LOT_SIZE as _SV_LOT
+            from vectra_quant.backtest.short_vol_engine import ShortVolEngine
+            from vectra_quant.backtest import iea_data as _iea_sv
+
+            resolved_from, resolved_to = from_date, to_date
+            if not resolved_from and not resolved_to:
+                tail = _iea_sv.load_index_window(instrument, tail_sessions=days)
+                if tail:
+                    resolved_from, resolved_to = min(tail), max(tail)
+
+            p = dict(strat.params)
+            sv_result = ShortVolEngine().run(
+                instrument=instrument,
+                from_date=resolved_from,
+                to_date=resolved_to,
+                lots=int(p.get("lots", 1)),
+                cost_per_leg=float(p.get("cost_per_leg", 40.0)),
+                entry_time=str(p.get("entry_time", "09:20:00")),
+                exit_time=str(p.get("exit_time", "15:15:00")),
+                min_dte=int(p.get("min_dte", 0)),
+            )
+            res = sv_result.as_dict()
+            res["strategy"] = strat_name
+            res["final_pnl"] = res["net_pnl"]
+            res["days"] = sv_result.total_trades + sv_result.skipped_days
+            res["initial_capital"] = 0.0
+            res["data_warning"] = (
+                "Naked short straddle: loss is unbounded in principle. This sample begins "
+                "after the March-2020 crash, so the worst tail event of the modern era is "
+                "NOT reflected in these statistics. Costs use a Rs/leg figure measured on a "
+                "calm session; spreads widen in stressed markets, exactly when the large "
+                "losses occur, so realised tail costs are worse than modelled."
+            )
+
+            # Emit the leg-level BacktestTrade shape the FE already renders,
+            # grouping the CE+PE pair under one position_id per session.
+            sv_trades: list[dict[str, Any]] = []
+            for t in sv_result.trades:
+                for tag, right, entry_px, exit_px, leg_pnl, leg_costs in (
+                    ("L1", "CE", t.ce_entry, t.ce_exit, t.net_pnl, t.costs),
+                    ("L2", "PE", t.pe_entry, t.pe_exit, 0.0, 0.0),
+                ):
+                    sv_trades.append({
+                        "id": f"{t.date}_{tag}", "position_id": t.date,
+                        "symbol": f"NIFTY {int(t.strike)} {right}", "direction": right,
+                        "entry_price": entry_px, "exit_price": exit_px,
+                        "opened_at": f"{t.date} {p.get('entry_time', '09:20:00')}",
+                        "closed_at": f"{t.date} {p.get('exit_time', '15:15:00')}",
+                        "qty": _SV_LOT * int(p.get("lots", 1)),
+                        "net_pnl": leg_pnl, "gross_pnl": t.gross_pnl if tag == "L1" else 0.0,
+                        "costs": leg_costs, "slippage_cost": 0.0, "capital_used": 0.0,
+                        "exit_reason": t.exit_reason, "win": t.win,
+                    })
+            res["trades"] = sv_trades
+            res["wiggle_analysis"] = {}
+            return res
+
         # weekly_credit_spread holds positions across multiple sessions
         # (Wednesday entry, held toward next-week expiry); BacktestEngine's
         # day loop resets `in_trade` every session by design and can't model

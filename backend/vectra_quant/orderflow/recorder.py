@@ -132,6 +132,18 @@ class DepthRecorder:
         subscribe (officially maintained) rather than re-implementing it --
         this module owns aggregation + persistence + reconnect policy only.
         """
+        if not self.cfg.allow_live_recording:
+            # Dhan drops the OLDEST depth socket on the account past the
+            # 5-connection cap (error 805). The EC2 capture service holds that
+            # whole budget in market hours, so a recorder started elsewhere on
+            # the same credentials silently kills a production feed. Opt in with
+            # ORDERFLOW_ALLOW_LIVE_RECORDING=1 on the host that owns the budget.
+            raise RuntimeError(
+                "DepthRecorder.run_forever() refused: live depth recording is disabled "
+                "(cfg.allow_live_recording=False). Set ORDERFLOW_ALLOW_LIVE_RECORDING=1 "
+                "only on the host that owns the account's Dhan connection budget."
+            )
+
         from dhanhq import FullDepth  # local import: optional dependency for callers who only need the pure logic
 
         backoff_idx = 0

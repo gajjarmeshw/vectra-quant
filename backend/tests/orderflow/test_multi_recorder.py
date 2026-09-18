@@ -110,7 +110,8 @@ async def test_run_forever_reuses_connection_across_frames(tmp_path):
         {"security_id": 2885, "type": "Ask", "depth": [{"price": 1245.0, "quantity": 100, "orders": 3}]},
     ]
     instruments = [make_stock("RELIANCE", 2885)]
-    cfg = OrderFlowCfg(recorder_start_time=time(0, 0), recorder_stop_time=time(23, 59))
+    cfg = OrderFlowCfg(recorder_start_time=time(0, 0), recorder_stop_time=time(23, 59),
+                       allow_live_recording=True)  # mock socket, no real budget consumed
     recorder = MultiInstrumentDepthRecorder(
         dhan_context=object(), instruments=instruments, cfg=cfg,
         storage_root=str(tmp_path), connection_label="conn0",

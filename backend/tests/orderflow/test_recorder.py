@@ -70,6 +70,7 @@ async def test_run_forever_reconnects_after_a_disconnect(tmp_path):
     cfg = OrderFlowCfg(
         recorder_start_time=time(0, 0), recorder_stop_time=time(23, 59),
         reconnect_backoff_seconds=(0.01, 0.01),
+        allow_live_recording=True,  # mock socket, no real connection budget consumed
     )
     instruments = [make_future_instrument()]
     recorder = DepthRecorder(
@@ -139,7 +140,8 @@ async def test_run_forever_does_not_reconnect_on_normal_frame_exhaustion(tmp_pat
         {"security_id": 99999, "type": "Bid", "depth": [{"price": 100.0, "quantity": 10, "orders": 1}]},
         {"security_id": 99999, "type": "Ask", "depth": [{"price": 101.0, "quantity": 20, "orders": 2}]},
     ]
-    cfg = OrderFlowCfg(recorder_start_time=time(0, 0), recorder_stop_time=time(23, 59))
+    cfg = OrderFlowCfg(recorder_start_time=time(0, 0), recorder_stop_time=time(23, 59),
+                       allow_live_recording=True)  # mock socket, no real budget consumed
     instruments = [make_future_instrument()]
     recorder = DepthRecorder(
         dhan_context=object(), instrument_master_provider=lambda: instruments,
@@ -163,6 +165,7 @@ async def test_run_forever_sleeps_outside_session_window(tmp_path):
     poll interval is patched to instant so this test doesn't take 30s."""
     cfg = OrderFlowCfg(
         recorder_start_time=time(1, 0), recorder_stop_time=time(1, 1),  # a window almost certainly not "now"
+        allow_live_recording=True,  # mock socket; this test asserts the window guard, not the opt-in
     )
     instruments = [make_future_instrument()]
     recorder = DepthRecorder(
