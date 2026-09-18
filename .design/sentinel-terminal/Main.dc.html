@@ -1,0 +1,300 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <style>
+    /* Tokens lifted verbatim from pwa/src/theme.css + tailwind.config.js.
+       Artboards are fixed frames, so the app's clamp() type ramp is pinned to
+       its desktop end rather than re-declared fluid. */
+    :root {
+      --paper:#070C0F; --card:#0E1419; --card-2:#131B21; --well:#0A1014;
+      --ink:#EBF2F5; --ink-2:#96A6B0; --muted:#5F6F7A;
+      --line:#1E2931; --line-soft:#161F26; --line-strong:#2F3E48;
+      --green:#00E098; --red:#FF5866; --amber:#FFB836; --ai:#4AA0FF;
+      --violet:#A78BFA; --cyan:#22D3EE; --teal:#2DD4BF; --orange:#FB923C;
+      --green-soft:#0C2C28; --amber-soft:#2B281C; --ai-soft:#152535; --cyan-soft:#102B33;
+      --card-hi:rgba(180,225,255,0.045);
+      --shadow-card:0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.5);
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink);
+           font-family:'Inter',system-ui,sans-serif; font-size:15.5px; line-height:1.55;
+           -webkit-font-smoothing:antialiased; }
+    a { color:var(--ai); text-decoration:none; } a:hover { color:#7CBCFF; }
+    .num { font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;
+           font-variant-numeric:tabular-nums; font-feature-settings:'tnum' 1,'zero' 1; }
+    .eyebrow { font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11.5px;
+               letter-spacing:0.13em; text-transform:uppercase; color:var(--muted); font-weight:500; }
+    .disp { font-family:'Outfit',system-ui,sans-serif; letter-spacing:-0.01em; }
+    .card { border-radius:16px; padding:20px; border:1px solid var(--line);
+            background:linear-gradient(180deg,var(--card-hi),transparent 140px), rgba(14,20,25,0.74);
+            box-shadow:var(--shadow-card); }
+    .chip { font-family:'JetBrains Mono',monospace; font-size:11.5px; letter-spacing:0.02em;
+            padding:3px 8px; border-radius:999px; border:1px solid var(--line);
+            background:var(--line-soft); text-transform:uppercase; font-weight:500; color:var(--ink-2); }
+  </style>
+</helmet>
+
+<div style="display:flex; width:1440px; height:900px; overflow:hidden">
+
+  <!-- ── sidebar: w-56 / 224px, border-r, bg-card/70 (App.jsx aside) ── -->
+  <aside style="width:224px; flex-shrink:0; border-right:1px solid var(--line);
+                background:rgba(14,20,25,0.7); display:flex; flex-direction:column">
+    <div style="padding:18px 16px 14px; border-bottom:1px solid var(--line-soft)">
+      <div class="disp" style="font-size:18.5px; font-weight:600; letter-spacing:-0.01em">VECTRA QUANT</div>
+      <div class="eyebrow" style="margin-top:4px">Sentinel · v2</div>
+    </div>
+
+    <nav style="flex:1; padding:12px 10px; display:flex; flex-direction:column; gap:2px">
+      <div style="display:flex; align-items:center; gap:10px; padding:9px 11px; border-radius:10px;
+                  background:var(--ai-soft); color:var(--ink); font-size:13.5px; font-weight:500">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ai)" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+        Home
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:9px 11px; border-radius:10px;
+                  color:var(--ink-2); font-size:13.5px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>
+        Trade
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:9px 11px; border-radius:10px;
+                  color:var(--ink-2); font-size:13.5px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v6l-5 9a2 2 0 0 0 1.7 3h12.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M8 3h8"/></svg>
+        Backtest
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:9px 11px; border-radius:10px;
+                  color:var(--ink-2); font-size:13.5px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>
+        Reports
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:9px 11px; border-radius:10px;
+                  color:var(--ink-2); font-size:13.5px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+        Data
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:9px 11px; border-radius:10px;
+                  color:var(--ink-2); font-size:13.5px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7.5 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7.5a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H7a1.6 1.6 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V7a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></svg>
+        System
+      </div>
+    </nav>
+
+    <div style="padding:14px 16px; border-top:1px solid var(--line-soft); display:flex; gap:6px">
+      <span class="chip" style="border-color:rgba(255,184,54,0.35); background:var(--amber-soft); color:var(--amber)">Paper</span>
+      <span class="chip" style="border-color:rgba(0,224,152,0.3); background:var(--green-soft); color:var(--green)">Live feed</span>
+    </div>
+  </aside>
+
+  <!-- ── main column ── -->
+  <div style="flex:1; display:flex; flex-direction:column; min-width:0">
+
+    <!-- command bar: ticker + state (App.jsx sticky top) -->
+    <div style="height:56px; flex-shrink:0; border-bottom:1px solid var(--line);
+                background:rgba(7,12,15,0.7); display:flex; align-items:center;
+                justify-content:space-between; padding:0 24px">
+      <div style="display:flex; align-items:center; gap:26px">
+        <div style="display:flex; align-items:baseline; gap:8px">
+          <span class="eyebrow">NIFTY</span>
+          <span class="num" style="font-size:15px; font-weight:500">23,412.65</span>
+          <span class="num" style="font-size:12.5px; color:var(--green)">+0.42%</span>
+        </div>
+        <div style="display:flex; align-items:baseline; gap:8px">
+          <span class="eyebrow">SENSEX</span>
+          <span class="num" style="font-size:15px; font-weight:500">76,884.20</span>
+          <span class="num" style="font-size:12.5px; color:var(--green)">+0.38%</span>
+        </div>
+        <div style="display:flex; align-items:baseline; gap:8px">
+          <span class="eyebrow">India VIX</span>
+          <span class="num" style="font-size:15px; font-weight:500">11.84</span>
+          <span class="num" style="font-size:12.5px; color:var(--red)">−2.10%</span>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px">
+        <span class="chip" style="border-color:rgba(0,224,152,0.3); background:var(--green-soft); color:var(--green)">In window</span>
+        <span class="chip">14:06 IST</span>
+      </div>
+    </div>
+
+    <!-- content -->
+    <main style="flex:1; padding:24px; display:flex; flex-direction:column; gap:16px; overflow:hidden">
+
+      <!-- HERO: the one number that matters -->
+      <div class="card" style="background:
+             radial-gradient(130% 110% at 0% 0%, rgba(0,224,152,0.10), transparent 62%),
+             linear-gradient(180deg,var(--card-hi),transparent 140px), rgba(14,20,25,0.74);
+             border-color:rgba(0,224,152,0.22)">
+        <div style="display:flex; align-items:flex-start; justify-content:space-between">
+          <div>
+            <div class="eyebrow">Day P&amp;L</div>
+            <div class="num" style="font-size:64px; line-height:1; letter-spacing:-0.03em;
+                        font-weight:500; color:var(--green); margin-top:8px">+₹4,287</div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center">
+            <span class="chip" style="border-color:rgba(0,224,152,0.3); background:var(--green-soft); color:var(--green)">Running</span>
+            <span class="chip">3 of 4 trades</span>
+          </div>
+        </div>
+
+        <!-- Day rail: floor ← 0 → target, with the live marker -->
+        <div style="margin-top:22px">
+          <div style="position:relative; height:6px; border-radius:999px; background:var(--well);
+                      border:1px solid var(--line-soft); overflow:hidden">
+            <div style="position:absolute; left:50%; top:0; bottom:0; width:57%;
+                        background:linear-gradient(90deg, rgba(0,224,152,0.25), var(--green))"></div>
+          </div>
+          <div style="position:relative; height:18px; margin-top:7px">
+            <span class="num" style="position:absolute; left:0; font-size:11.5px; color:var(--red)">−₹1,200 floor</span>
+            <span class="num" style="position:absolute; left:50%; transform:translateX(-50%);
+                        font-size:11.5px; color:var(--muted)">0</span>
+            <span class="num" style="position:absolute; right:0; font-size:11.5px; color:var(--green)">+₹7,500 target</span>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; margin-top:18px">
+          <div style="border:1px solid var(--line); border-radius:10px; padding:13px 14px; background:var(--card-2)">
+            <div class="eyebrow" style="color:var(--violet)">Closed</div>
+            <div class="num" style="font-size:25px; margin-top:5px; letter-spacing:-0.01em">3</div>
+          </div>
+          <div style="border:1px solid var(--line); border-radius:10px; padding:13px 14px; background:var(--card-2)">
+            <div class="eyebrow" style="color:var(--cyan)">Win rate</div>
+            <div class="num" style="font-size:25px; margin-top:5px; color:var(--green); letter-spacing:-0.01em">67%</div>
+          </div>
+          <div style="border:1px solid var(--line); border-radius:10px; padding:13px 14px; background:var(--card-2)">
+            <div class="eyebrow" style="color:var(--orange)">Open</div>
+            <div class="num" style="font-size:25px; margin-top:5px; letter-spacing:-0.01em">1</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- two-column: fills + right rail -->
+      <div style="display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:16px; flex:1; min-height:0">
+
+        <div class="card" style="display:flex; flex-direction:column; min-height:0">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px">
+            <div>
+              <div class="disp" style="font-size:15px; font-weight:600">Closed today</div>
+              <div style="font-size:13.5px; color:var(--muted); margin-top:1px">3 fills · net after charges</div>
+            </div>
+            <span class="chip">Session 18 Sep</span>
+          </div>
+
+          <table style="width:100%; border-collapse:collapse">
+            <thead>
+              <tr>
+                <th class="eyebrow" style="text-align:left; padding:0 0 8px; font-weight:500">Instrument</th>
+                <th class="eyebrow" style="text-align:right; padding:0 0 8px; font-weight:500">Entry</th>
+                <th class="eyebrow" style="text-align:right; padding:0 0 8px; font-weight:500">Exit</th>
+                <th class="eyebrow" style="text-align:right; padding:0 0 8px; font-weight:500">Reason</th>
+                <th class="eyebrow" style="text-align:right; padding:0 0 8px; font-weight:500">Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-top:1px solid var(--line-soft)">
+                <td style="padding:11px 0; font-size:13.5px">NIFTY 23400 CE</td>
+                <td class="num" style="padding:11px 0; text-align:right; font-size:13.5px; color:var(--ink-2)">112.40</td>
+                <td class="num" style="padding:11px 0; text-align:right; font-size:13.5px; color:var(--ink-2)">148.65</td>
+                <td style="padding:11px 0; text-align:right; font-size:12.5px; color:var(--muted)">Target</td>
+                <td class="num" style="padding:11px 0; text-align:right; font-size:13.5px; color:var(--green)">+₹2,356</td>
+              </tr>
+              <tr style="border-top:1px solid var(--line-soft)">
+                <td style="padding:11px 0; font-size:13.5px">NIFTY 23350 PE</td>
+                <td class="num" style="padding:11px 0; text-align:right; font-size:13.5px; color:var(--ink-2)">98.15</td>
+                <td class="num" style="padding:11px 0; text-align:right; font-size:13.5px; color:var(--ink-2)">81.30</td>
+                <td style="padding:11px 0; text-align:right; font-size:12.5px; color:var(--muted)">Stop</td>
+                <td class="num" style="padding:11px 0; text-align:right; font-size:13.5px; color:var(--red)">−₹1,095</td>
+              </tr>
+              <tr style="border-top:1px solid var(--line-soft)">
+                <td style="padding:11px 0; font-size:13.5px">NIFTY 23450 CE</td>
+                <td class="num" style="padding:11px 0; text-align:right; font-size:13.5px; color:var(--ink-2)">76.80</td>
+                <td class="num" style="padding:11px 0; text-align:right; font-size:13.5px; color:var(--ink-2)">122.05</td>
+                <td style="padding:11px 0; text-align:right; font-size:12.5px; color:var(--muted)">Target</td>
+                <td class="num" style="padding:11px 0; text-align:right; font-size:13.5px; color:var(--green)">+₹2,941</td>
+              </tr>
+              <tr style="border-top:1px solid var(--line)">
+                <td colspan="4" class="eyebrow" style="padding:12px 0 0">Net after charges</td>
+                <td class="num" style="padding:12px 0 0; text-align:right; font-size:15px; color:var(--green); font-weight:500">+₹4,202</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div style="margin-top:auto; padding-top:16px; border-top:1px solid var(--line-soft);
+                      display:flex; align-items:center; justify-content:space-between">
+            <span style="font-size:13.5px; color:var(--muted)">Open · NIFTY 23400 CE · 1 lot</span>
+            <span class="num" style="font-size:13.5px; color:var(--green)">+₹85 unrealised</span>
+          </div>
+        </div>
+
+        <!-- right rail -->
+        <div style="display:flex; flex-direction:column; gap:16px; min-height:0">
+          <div class="card">
+            <div class="eyebrow">Armed for this session</div>
+            <div style="margin-top:12px; display:flex; flex-direction:column; gap:9px">
+              <div style="display:flex; align-items:center; gap:9px">
+                <span style="width:6px; height:6px; border-radius:999px; background:var(--green); flex-shrink:0"></span>
+                <span style="font-size:13.5px; flex:1">Intraday Short Volatility</span>
+                <span class="num" style="font-size:11.5px; color:var(--muted)">short-vol engine</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:9px">
+                <span style="width:6px; height:6px; border-radius:999px; background:var(--green); flex-shrink:0"></span>
+                <span style="font-size:13.5px; flex:1">Renko Trend Sniper</span>
+                <span class="num" style="font-size:11.5px; color:var(--muted)">tick loop</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:9px">
+                <span style="width:6px; height:6px; border-radius:999px; background:var(--line-strong); flex-shrink:0"></span>
+                <span style="font-size:13.5px; flex:1; color:var(--ink-2)">Nifty Thunderbolt</span>
+                <span class="num" style="font-size:11.5px; color:var(--amber)">needs depth</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="flex:1; min-height:0">
+            <div style="display:flex; align-items:center; justify-content:space-between">
+              <div class="eyebrow">Guardrails</div>
+              <span class="chip" style="border-color:rgba(0,224,152,0.3); background:var(--green-soft); color:var(--green)">All clear</span>
+            </div>
+            <div style="margin-top:13px; display:flex; flex-direction:column; gap:11px">
+              <div style="display:flex; align-items:center; gap:10px">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.2"
+                     stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+                <span style="font-size:13.5px; flex:1">Feed fresh</span>
+                <span class="num" style="font-size:11.5px; color:var(--muted)">1.2s</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.2"
+                     stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+                <span style="font-size:13.5px; flex:1">Loss floor intact</span>
+                <span class="num" style="font-size:11.5px; color:var(--muted)">₹5,487 clear</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.2"
+                     stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+                <span style="font-size:13.5px; flex:1">Kill switch armed</span>
+                <span class="num" style="font-size:11.5px; color:var(--muted)">manual</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2.2"
+                     stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.5"/></svg>
+                <span style="font-size:13.5px; flex:1; color:var(--ink-2)">Entry window closes</span>
+                <span class="num" style="font-size:11.5px; color:var(--muted)">14:30</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

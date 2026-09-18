@@ -38,6 +38,7 @@ export function Today({ s, onSquareOff }) {
   const fsm = s.fsm || {};
   const closed = (s.trades || []).filter((t) => t.status === 'CLOSED');
   const wins = closed.filter((t) => (t.pnl || 0) > 0).length;
+  const hasActivity = closed.length > 0 || (s.positions || []).length > 0;
 
   return (
     <div className="space-y-cardgap">
@@ -61,22 +62,27 @@ export function Today({ s, onSquareOff }) {
             lossLimit={fsm.loss_limit || 0}
           />
         )}
-        <div className="grid grid-cols-3 gap-2 mt-4">
-          <StatTile label="Closed" value={closed.length} accent="violet" icon={CheckCircle2} />
-          <StatTile
-            label="Win rate"
-            value={closed.length ? `${Math.round((wins / closed.length) * 100)}%` : '—'}
-            tone={closed.length && wins / closed.length >= 0.5 ? 'text-green' : ''}
-            accent="cyan"
-            icon={Percent}
-          />
-          <StatTile
-            label="Open"
-            value={(s.positions || []).length}
-            accent="orange"
-            icon={Layers}
-          />
-        </div>
+        {/* Tiles only once there is something to count. Before the first fill
+            they read 0 / — / 0, which is three pieces of furniture saying
+            nothing the hero above has not already said. */}
+        {hasActivity && (
+          <div className="grid grid-cols-3 gap-2 mt-4">
+            <StatTile label="Closed" value={closed.length} accent="violet" icon={CheckCircle2} />
+            <StatTile
+              label="Win rate"
+              value={closed.length ? `${Math.round((wins / closed.length) * 100)}%` : '—'}
+              tone={closed.length && wins / closed.length >= 0.5 ? 'text-green' : ''}
+              accent="cyan"
+              icon={Percent}
+            />
+            <StatTile
+              label="Open"
+              value={(s.positions || []).length}
+              accent="orange"
+              icon={Layers}
+            />
+          </div>
+        )}
       </Card>
 
       {s.expiry_today?.length > 0 && (
@@ -87,7 +93,9 @@ export function Today({ s, onSquareOff }) {
 
       <PremarketCard />
 
-      <ClosedTradesTable title="Closed today" rows={closed} empty="No closed trades yet." />
+      {/* An empty fills table is a header, seven column labels and a shrug. Once
+          anything has traded it earns its place; until then the hero carries it. */}
+      {closed.length > 0 && <ClosedTradesTable title="Closed today" rows={closed} />}
 
       <StatusStrip s={s} />
     </div>
@@ -980,8 +988,13 @@ function Check({ ok, warn, label, detail }) {
   );
 }
 
-/* Human names for the three execution routes, and — more importantly — what
-   each one implies about how (and whether) the strategy can actually fire. */
+/* Human names for the execution routes, and — more importantly — what each one
+   implies about how (and whether) the strategy can actually fire.
+
+   Every EXECUTION_MODE the backend can emit needs an entry here. Adding a mode
+   server-side without one used to white-screen the whole Strategies tab, since
+   the sidebar dereferenced ROUTE[mode].label unguarded; callers now fall back
+   to `standard` so a missing entry degrades to a wrong label, not a crash. */
 const ROUTE = {
   standard: {
     label: 'Tick loop',
@@ -996,7 +1009,80 @@ const ROUTE = {
     label: 'Weekly engine',
     detail: 'Driven by WeeklySpreadEngine on its own multi-day schedule, not the tick loop.',
   },
+  intraday_short_vol: {
+    label: 'Short-vol engine',
+    detail:
+      'Driven by ShortVolEngine as a same-session option structure, not the tick loop. Entry and exit are clock-based within one day.',
+  },
 };
+
+/* Plain-language "how does this thing actually decide" panel.
+
+   The Strategies tab used to show only readiness plumbing — dependency health,
+   execution route, parameter tables — which says whether a strategy CAN run but
+   never what it DOES. This answers the questions a reader actually has: does it
+   need the order book, what picks the direction, what fires the entry, what can
+   veto it, how big is the position, and when does it close.
+
+   Content comes from the strategy class (`mechanics`) rather than being written
+   here, so the explanation cannot drift away from the logic it describes. */
+function HowItWorks({ mech }) {
+  if (!mech || !mech.direction) return null;
+  const rows = [
+    ['Direction', mech.direction],
+    ['Trigger', mech.trigger],
+    ['Sizing', mech.sizing],
+    ['Exit', mech.exit],
+  ].filter(([, v]) => v);
+  const filters = mech.filters || [];
+
+  return (
+    <Card>
+      <SectionHeader title="How it works" sub="what this strategy actually does, in plain terms" />
+
+      {/* The single most load-bearing fact: without the depth recorder running,
+          an order-flow strategy cannot produce a signal at all. */}
+      <div
+        className={`rounded-block border px-3 py-2.5 mb-3 ${
+          mech.needs_orderflow ? 'border-amber/40 bg-amber/5' : 'border-line bg-card-2/40'
+        }`}
+      >
+        <div className="eyebrow mb-1">{mech.needs_orderflow ? 'Needs live order flow' : 'No order flow needed'}</div>
+        <p className="text-sec text-ink-2 leading-relaxed">
+          {mech.needs_orderflow
+            ? 'Reads the live order book (resting buy/sell quantities). It cannot produce a signal unless the depth recorder is running during market hours — and that data does not exist historically, which is why it cannot be backtested.'
+            : 'Works from prices, option premiums and open interest alone. No order-book feed required, so it can be backtested on history.'}
+        </p>
+      </div>
+
+      <dl className="space-y-3">
+        {rows.map(([label, text]) => (
+          <div key={label}>
+            <dt className="eyebrow">{label}</dt>
+            <dd className="text-sec text-ink-2 leading-relaxed mt-0.5">{text}</dd>
+          </div>
+        ))}
+        {filters.length > 0 && (
+          <div>
+            <dt className="eyebrow">
+              Filters <span className="text-muted font-normal">· {filters.length} · applied in order</span>
+            </dt>
+            <dd className="mt-1">
+              <ul className="space-y-1.5">
+                {filters.map((f, i) => (
+                  <li key={i} className="text-sec text-ink-2 leading-relaxed flex gap-2">
+                    <span className="num text-f10 text-muted shrink-0 mt-0.5">{i + 1}</span>
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            </dd>
+          </div>
+        )}
+      </dl>
+    </Card>
+  );
+}
 
 function StrategyDetail({ st, isActive, saving, onToggle }) {
   const accent = STRATEGY_ACCENT[st.name] || 'ai';
@@ -1044,6 +1130,8 @@ function StrategyDetail({ st, isActive, saving, onToggle }) {
           <p className="text-sec text-ink-2 mt-3 leading-relaxed">{st.description}</p>
         </div>
       </Card>
+
+      <HowItWorks mech={st.mechanics} />
 
       <Card>
         <SectionHeader
@@ -1386,7 +1474,8 @@ export function Trade({ s, onApprove, onReject, busy, onRefresh }) {
                     </span>
                   </div>
                   <div className="num text-f10 text-muted mt-1 truncate">
-                    {on ? 'active' : 'off'} · {ROUTE[st.execution_mode || 'standard'].label.toLowerCase()}
+                    {on ? 'active' : 'off'} ·{' '}
+                    {(ROUTE[st.execution_mode] || ROUTE.standard).label.toLowerCase()}
                   </div>
                 </button>
               );

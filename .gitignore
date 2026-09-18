@@ -23,3 +23,9 @@ pwa/.env.production
 backend/data/
 *.tar.gz*
 /orderflow_2*/
+
+# Design canvas working files. The .dc.html artboard sources and canvas.json are
+# the editable source and are kept; the seeded payload (~2.5MB, the editor bundled
+# with the content) is regenerated from them on every change, so it is not.
+.design/**/*.html
+!.design/**/*.dc.html

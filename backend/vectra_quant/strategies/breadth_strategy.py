@@ -33,6 +33,36 @@ class BreadthStrategy(BaseStrategy):
     version = "1.0"
     EXECUTION_MODE = "live_only"
 
+    # Descriptive only -- documents existing behaviour for the Strategies tab.
+    mechanics = {
+        "needs_orderflow": True,
+        "direction": (
+            "Not one stock, but the whole market at once: it reads the order book of "
+            "100 NIFTY constituents and asks how many of them are leaning the same "
+            "way right now. Broad buying pressure across most stocks reads bullish, "
+            "broad selling reads bearish — the idea being the index follows."
+        ),
+        "trigger": (
+            "The combined reading is converted to a z-score (how unusual the lean is "
+            "versus the spread across stocks), and the entry fires the first time "
+            "that score crosses its threshold. A z-score is used rather than a raw "
+            "average so the same number means the same thing whether 40 stocks or "
+            "100 are quoting."
+        ),
+        "filters": [
+            "Minimum stocks reporting — a reading built from too few live quotes is "
+            "ignored rather than trusted.",
+            "Quote age — a stock that has stopped quoting drops out instead of "
+            "contributing a stale, frozen lean forever.",
+        ],
+        "sizing": "Fixed lot count; a single-leg option position, deliberately the "
+                  "simplest possible structure while the signal is still unproven.",
+        "exit": (
+            "Whichever comes first: premium falls ~30% (stop), premium rises ~50% "
+            "(target), the maximum hold time elapses, or the 15:10 force-exit."
+        ),
+    }
+
     default_params: dict[str, Any] = {
         "signal_window_start": "09:20",
         "signal_window_end": "15:00",

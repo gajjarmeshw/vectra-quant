@@ -1,0 +1,31 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Home — live session" },
+    { "file": "Backtest.dc.html", "x": 1560, "y": 0, "w": 1440, "h": 900, "title": "Backtest — short vol" },
+    { "file": "Strategies.dc.html", "x": 3120, "y": 0, "w": 1440, "h": 900, "title": "Strategies — how it works" }
+  ],
+  "annotations": [
+    {
+      "id": "palette-note",
+      "x": 0,
+      "y": -150,
+      "w": 420,
+      "text": "Petrol base (#070C0F) replaces the old neutral grey.\nAll tokens lifted from theme.css + tailwind.config.js —\nOutfit / Inter / JetBrains Mono, 16px card + 10px block radii."
+    },
+    {
+      "id": "data-note",
+      "x": 1560,
+      "y": -150,
+      "w": 420,
+      "text": "Backtest figures are REAL — the short_vol run from this\nsession: 74 trades, 70.3% win, +Rs23,991, PF 1.40.\nHome screen uses realistic sample fills."
+    },
+    {
+      "id": "howitworks-note",
+      "x": 3120,
+      "y": -150,
+      "w": 420,
+      "text": "The 'How it works' panel answers what the tab never did:\nneeds order flow?, direction, trigger, filters, sizing, exit.\nCopy comes from the strategy class, not the UI."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

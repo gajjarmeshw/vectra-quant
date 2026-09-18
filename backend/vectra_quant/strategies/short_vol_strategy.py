@@ -51,6 +51,34 @@ class ShortVolStrategy(BaseStrategy):
         "indicators": ["ATM straddle premium", "implied volatility"],
     }
 
+    mechanics = {
+        "needs_orderflow": False,
+        "direction": (
+            "None — this strategy takes no directional view at all. It sells BOTH "
+            "the call and the put at the same strike, so it makes money when the "
+            "index stays put and loses when it moves sharply, in either direction."
+        ),
+        "trigger": (
+            "The clock, not a signal. It enters every trading session at 09:20, "
+            "selling the strike nearest to where NIFTY is trading at that moment."
+        ),
+        "filters": [
+            "None by default — it trades every session.",
+            "Optional 'min_dte': skip sessions close to expiry. Expiry day measured "
+            "worst in testing (violent last-day price swings), but the per-day "
+            "samples are small, so no filter is applied unless you turn it on.",
+        ],
+        "sizing": (
+            "Fixed lot count that you set ('lots'); it does not vary with conviction "
+            "or account size. Because the sold options are naked, margin required is "
+            "large relative to the premium collected — size small."
+        ),
+        "exit": (
+            "The clock again: everything is bought back at 15:15 the same day. There "
+            "is no stop-loss and no profit target, and nothing is ever held overnight."
+        ),
+    }
+
     def get_wiggle_params(self) -> list[str]:
         return ["cost_per_leg", "min_dte", "lots"]
 

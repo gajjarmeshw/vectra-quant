@@ -119,7 +119,6 @@ def build_state(st: Any) -> dict[str, Any]:
     # position's charges are not yet paid, so they are shown as an estimate and the
     # net-after-charges figure sits beside the gross one.
     positions = []
-    open_charges = 0.0
     for p in st.broker.get_positions():
         if not p.is_open:
             continue
@@ -127,7 +126,6 @@ def build_state(st: Any) -> dict[str, Any]:
             p.average_price, p.last_price or p.average_price, abs(int(p.quantity)),
             exchange=p.exchange or "NSE",
         )
-        open_charges += charges
         positions.append({
             "symbol": p.trading_symbol, "qty": p.quantity,
             "avg": round(p.average_price, 2), "ltp": round(p.last_price, 2),
@@ -175,9 +173,6 @@ def build_state(st: Any) -> dict[str, Any]:
         "squareoff_at": st.settings.risk.squareoff_at.strftime("%H:%M"),
         "market": market,
         "positions": positions,
-        # Charges: paid so far today, plus what the open book would cost to close.
-        "charges_today": round(sum(t.costs for t in trades), 2),
-        "open_charges_est": round(open_charges, 2),
         "trades": [{
             "id": t.id, "symbol": t.trading_symbol, "origin": t.origin,
             "lots": t.lots, "lot_size": t.lot_size, "qty": t.qty,
@@ -228,21 +223,19 @@ def build_state(st: Any) -> dict[str, Any]:
                           st.settings.instruments.secondary)
             },
             "guardian_detection": st.settings.guardian.detection,
-            # D-001 answers itself here: if `ws` stays 0 while `rest` climbs, the
-            # Groww websocket does not report app-placed orders.
-            "guardian_detected_by": st.guardian.detected_by,
-            "reconnects": st.feed.reconnects,
         },
 
         "violations_today": violations,
-        "institutional": {
-            "fii_drift": json.loads(state_get("FII_NET_INDEX_FUTURES", "[]")),
-            **{
-                n: st.chain.get_institutional_context(n)
-                for n in (st.settings.instruments.primary, st.settings.instruments.secondary)
-                if hasattr(st.chain, "get_institutional_context")
-            }
-        },
+        # NOTE: an "institutional" block (option call/put walls, FII drift) used
+        # to be built here on EVERY /state poll via
+        # `st.chain.get_institutional_context(...)` per symbol. Nothing in the
+        # frontend ever read it -- verified by grep across the whole PWA -- so
+        # each poll paid for that computation and shipped the payload for no
+        # one. Removed rather than left as silent overhead.
+        #
+        # The data itself is not lost: `chain.get_institutional_context(symbol)`
+        # still exists and can be called from a dedicated endpoint (or added
+        # back here) the moment a screen actually renders walls.
         "algo": {
             "enabled": getattr(st.settings.algo, "enabled", True) if hasattr(st.settings, "algo") else True,
             "active_strategies": getattr(st.settings.algo, "active_strategies", []) if hasattr(st.settings, "algo") else [],

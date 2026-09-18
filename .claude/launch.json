@@ -2,6 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "sentinel-api",
+      "runtimeExecutable": "../.venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "vectra_quant.app:create_app", "--factory", "--host", "127.0.0.1", "--port", "8000"],
+      "cwd": "backend",
+      "port": 8000
+    },
+    {
       "name": "sentinel-pwa",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],

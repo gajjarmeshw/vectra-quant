@@ -104,6 +104,22 @@ class BaseStrategy(ABC):
         "indicators": []
     }
 
+    # Plain-language description of HOW the strategy actually decides, surfaced
+    # in the Strategies tab. It lives on the class (not in the frontend) so the
+    # explanation ships with the logic it describes and cannot silently drift
+    # away from it. Every field is prose aimed at a reader who has not read the
+    # code; `needs_orderflow` is the one the UI keys on, because whether a
+    # strategy depends on the live order book decides whether it can run at all
+    # without the depth recorder.
+    mechanics: dict[str, Any] = {
+        "needs_orderflow": False,
+        "direction": "",   # what picks bullish vs bearish (or states it is non-directional)
+        "trigger": "",     # what actually fires the entry
+        "filters": [],     # list[str]: what can veto or flip the raw signal, in order
+        "sizing": "",      # how position size is decided
+        "exit": "",        # how and when the position is closed
+    }
+
     def __init__(self, params: dict[str, Any] | None = None):
         self.params: dict[str, Any] = dict(self.default_params)
         if params:

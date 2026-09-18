@@ -56,5 +56,8 @@ def list_strategies() -> list[dict[str, Any]]:
             "wiggle_params": [k for k, v in cls.default_params.items() if isinstance(v, (int, float))],
             "manifest": getattr(cls, "manifest", {"symbols": [], "timeframes": [], "indicators": []}),
             "execution_mode": getattr(cls, "EXECUTION_MODE", "standard"),
+            # Plain-language "how it decides" for the Strategies tab. Defined on
+            # the strategy class so the explanation ships with the logic.
+            "mechanics": getattr(cls, "mechanics", BaseStrategy.mechanics),
         })
     return result

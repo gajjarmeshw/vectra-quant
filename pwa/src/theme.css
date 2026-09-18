@@ -19,27 +19,33 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  /* surfaces, darkest to lightest */
-  --c-paper: 10 10 12;
-  --c-card: 18 18 22;
-  --c-card-2: 23 23 28;
-  --c-well: 14 14 17;
+  /* Surfaces, darkest to lightest.
+     The base is a deep PETROL (desaturated blue-green), not neutral grey. Grey
+     is the default every trading dashboard reaches for, and it makes numbers
+     sit flat; a cool cast gives the ink and the green/red semantics something
+     to separate from, so P&L reads faster. Saturation is deliberately low --
+     enough to feel deliberate, never enough to tint the data. */
+  --c-paper: 7 12 15;
+  --c-card: 14 20 25;
+  --c-card-2: 19 27 33;
+  --c-well: 10 16 20;
 
-  /* ink */
-  --c-ink: 244 244 246;
-  --c-ink-2: 158 158 168;
-  --c-muted: 99 99 110;
+  /* ink — cooled to match the base rather than pure neutral white */
+  --c-ink: 235 242 245;
+  --c-ink-2: 150 166 176;
+  --c-muted: 95 111 122;
 
   /* lines */
-  --c-line: 35 35 41;
-  --c-line-soft: 26 26 31;
-  --c-line-strong: 50 50 58;
+  --c-line: 30 41 49;
+  --c-line-soft: 22 31 38;
+  --c-line-strong: 47 62 72;
 
-  /* semantic */
-  --c-green: 0 217 139;
-  --c-red: 255 77 94;
-  --c-amber: 255 176 32;
-  --c-ai: 77 141 255;
+  /* Semantic. Brightened slightly versus the old grey base: the petrol surface
+     is cooler and darker, so the same green/red read dimmer on it. */
+  --c-green: 0 224 152;
+  --c-red: 255 88 102;
+  --c-amber: 255 184 54;
+  --c-ai: 74 160 255;
 
   /* categorical */
   --c-violet: 167 139 250;
@@ -48,54 +54,61 @@
   --c-orange: 251 146 60;
   --c-pink: 244 114 182;
 
-  /* soft tints — hue at 12% over the card surface */
-  --c-green-soft: 16 42 36;
-  --c-red-soft: 46 27 31;
-  --c-amber-soft: 46 37 23;
-  --c-ai-soft: 25 33 51;
-  --c-violet-soft: 36 32 49;
-  --c-cyan-soft: 20 41 45;
-  --c-teal-soft: 21 41 40;
-  --c-orange-soft: 46 33 27;
-  --c-pink-soft: 45 29 41;
+  /* soft tints — hue at 12% over the card surface, recomputed for petrol */
+  --c-green-soft: 12 44 40;
+  --c-red-soft: 43 28 34;
+  --c-amber-soft: 43 40 28;
+  --c-ai-soft: 21 37 53;
+  --c-violet-soft: 32 34 52;
+  --c-cyan-soft: 16 43 51;
+  --c-teal-soft: 18 43 45;
+  --c-orange-soft: 42 35 29;
+  --c-pink-soft: 42 31 44;
 
   /* composites the raw channels can't express */
-  --card-bg: rgba(18, 18, 22, 0.74);
-  --card-hi: rgba(255, 255, 255, 0.038);
-  --card-edge-1: rgba(255, 255, 255, 0.16);
-  --card-edge-2: rgba(255, 255, 255, 0.02);
-  --card-spot: rgba(255, 255, 255, 0.055);
-  --btn-sweep: rgba(255, 255, 255, 0.2);
-  --well-bg: linear-gradient(180deg, rgba(0, 0, 0, 0.28), rgba(255, 255, 255, 0.012));
-  --chrome-bg: rgba(18, 18, 22, 0.92);
+  --card-bg: rgba(14, 20, 25, 0.74);
+  --card-hi: rgba(180, 225, 255, 0.045);
+  --card-edge-1: rgba(190, 230, 255, 0.17);
+  --card-edge-2: rgba(190, 230, 255, 0.022);
+  --card-spot: rgba(150, 215, 255, 0.06);
+  --btn-sweep: rgba(200, 235, 255, 0.22);
+  --well-bg: linear-gradient(180deg, rgba(0, 0, 0, 0.3), rgba(190, 230, 255, 0.014));
+  --chrome-bg: rgba(14, 20, 25, 0.92);
   --skeleton-sheen: rgba(255, 255, 255, 0.05);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
   --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.4), 0 16px 40px -16px rgba(0, 0, 0, 0.7);
   --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.5);
 
-  /* ambient canvas */
-  --amb-dot: 120 168 255;
-  --amb-dot-idle: 160 168 200;
-  --amb-dot-idle-a: 0.055;
-  --amb-blob-a: 0.055;
-  --amb-ring-a: 0.3;
+  /* Ambient canvas. Tuned toward aqua rather than the old generic blue so the
+     background belongs to the petrol base instead of sitting on top of it. The
+     alphas stay low on purpose: this is atmosphere behind live numbers, and
+     anything brighter competes with the data for attention. */
+  --amb-dot: 96 206 224;
+  --amb-dot-idle: 120 150 168;
+  --amb-dot-idle-a: 0.05;
+  --amb-blob-a: 0.062;
+  --amb-ring-a: 0.28;
 }
 
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --c-paper: 243 245 248;
+  /* Light is not an inversion of petrol — a tinted dark base becomes muddy when
+     flipped. It instead carries the same COOL bias at high key: a faintly
+     blue-green paper, so switching themes feels like the same product in
+     daylight rather than a different app. */
+  --c-paper: 238 244 246;
   --c-card: 255 255 255;
-  --c-card-2: 242 244 247;
-  --c-well: 239 241 245;
+  --c-card-2: 238 244 247;
+  --c-well: 234 241 244;
 
-  --c-ink: 14 17 22;
-  --c-ink-2: 74 81 92;
-  --c-muted: 122 130 142;
+  --c-ink: 10 20 26;
+  --c-ink-2: 68 84 94;
+  --c-muted: 114 130 141;
 
-  --c-line: 225 229 235;
-  --c-line-soft: 237 240 244;
-  --c-line-strong: 203 210 219;
+  --c-line: 219 228 233;
+  --c-line-soft: 232 239 243;
+  --c-line-strong: 196 209 217;
 
   --c-green: 0 154 98;
   --c-red: 214 27 68;

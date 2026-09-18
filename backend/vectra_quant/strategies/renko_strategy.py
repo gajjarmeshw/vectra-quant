@@ -283,6 +283,38 @@ class DynamicRenkoStrategy(BaseStrategy):
     MIN_WARMUP_DAYS = 2
     USES_PUSH_SIGNALS = True
 
+    # Descriptive only -- documents existing behaviour for the Strategies tab.
+    mechanics = {
+        "needs_orderflow": False,
+        "direction": (
+            "Trend, read off Renko bricks. Renko ignores time and plots a new brick "
+            "only when price actually moves a set distance, which strips out small "
+            "chop. Direction comes from two moving averages of those bricks (21 and "
+            "44): faster above slower is an uptrend, below is a downtrend."
+        ),
+        "trigger": (
+            "Two consecutive bricks in the same direction, agreeing with the trend "
+            "gate. Requiring two proves real thrust rather than acting on a single "
+            "brick that may just be noise reversing."
+        ),
+        "filters": [
+            "Volume — participation must be above average, so it does not chase a "
+            "move nobody is trading.",
+            "Cooldown — after a trade it will not re-enter the same direction for 30 "
+            "minutes, which stops it flip-flopping in choppy conditions.",
+            "Regime gate — entries are rejected during unwinding market regimes.",
+            "Box size adapts to volatility (ATR-based, with a floor), so bricks stay "
+            "meaningful in both calm and fast markets.",
+        ],
+        "sizing": "Standard engine sizing from the configured capital and the "
+                  "option's margin requirement.",
+        "exit": (
+            "A hard stop at 30% of the premium paid, plus a trailing stop that "
+            "activates once the trade is 1.5x its risk in profit, and the strategy's "
+            "own moving-average exit when the trend flips."
+        ),
+    }
+
     default_params: dict[str, Any] = {
         "box_atr_mult": 0.20,       # box_size = ATR_14 × this
         "box_min": 20.0,            # floor on box size

@@ -33,6 +33,46 @@ class ThunderboltStrategy(BaseStrategy):
     version = "1.0"
     EXECUTION_MODE = "live_only"  # routes.py returns an explanatory response instead of attempting a backtest
 
+    # Descriptive only -- documents the behaviour implemented in
+    # thunderbolt_signal.py for the Strategies tab. Changes nothing at runtime.
+    mechanics = {
+        "needs_orderflow": True,
+        "direction": (
+            "Live order-book imbalance on NIFTY: how much resting buy quantity sits "
+            "in the book versus sell quantity, moment to moment. More buyers waiting "
+            "than sellers reads bullish, the reverse reads bearish. A reversal check "
+            "can FLIP that read -- if the opposite side was even stronger earlier in "
+            "the session, the crossing is treated as that other side exhausting."
+        ),
+        "trigger": (
+            "The FIRST time the imbalance crosses a conviction level after 09:16, on "
+            "normal and high-volatility days. On quiet days it instead waits for the "
+            "reading to break out past a confirmed earlier swing extreme."
+        ),
+        "filters": [
+            "Opposite-side gate — if the other side showed real strength earlier, the "
+            "signal must clearly dominate it or the day is skipped.",
+            "Pre-open lock — an extreme reading before the open blocks trades against "
+            "it; extremes on both sides block the day entirely.",
+            "Liquidity-reversal flip — heavy one-way interest early, answered by a "
+            "meaningful push the other way, inverts the direction.",
+            "Medium-regime flip — on medium-volatility days a specific early pattern "
+            "inverts the direction.",
+            "Over-stretch veto — a reading already at an extreme is skipped: the "
+            "strategy wants the START of a move, not its climax.",
+            "Calendar: never trades Tuesday, and skips any day after a session where "
+            "India VIX closed at or above 22.",
+        ],
+        "sizing": (
+            "Units = investment amount divided by the margin one structure needs, "
+            "rounded down. Both legs scale together so the 1:2 ratio always holds."
+        ),
+        "exit": (
+            "No stop-loss and no profit target during the day — the shape of the "
+            "trade already caps the loss. Everything is force-closed at 15:10."
+        ),
+    }
+
     default_params: dict[str, Any] = {
         "signal_window_start": "09:16",
         "signal_window_end": "15:00",

@@ -24,7 +24,7 @@ function apply(theme) {
   root.setAttribute('data-theme', theme);
   root.style.colorScheme = theme;
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', theme === 'light' ? '#F3F5F8' : '#0A0A0C');
+  if (meta) meta.setAttribute('content', theme === 'light' ? '#EEF4F6' : '#070C0F');
   window.setTimeout(() => root.classList.remove('theming'), 320);
 }
 

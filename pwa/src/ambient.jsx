@@ -51,7 +51,10 @@ export default function AmbientField() {
         blobA: parseFloat(g('--amb-blob-a', '0.055')),
         ringA: parseFloat(g('--amb-ring-a', '0.3')),
       };
-      blobHues = [g('--c-ai', '77 141 255'), g('--c-violet', '167 139 250')];
+      /* Blue + teal rather than blue + violet: on the petrol base the violet
+         read as a separate colour sitting on top, while teal belongs to the
+         same family and lets the background recede behind the data. */
+      blobHues = [g('--c-ai', '74 160 255'), g('--c-teal', '45 212 191')];
     };
 
     const resize = () => {
@@ -147,7 +150,12 @@ export default function AmbientField() {
 
     const rings = (t) => {
       for (let i = ripples.length - 1; i >= 0; i -= 1) {
-        const age = (t - ripples[i].t) / RIPPLE_MS;
+        // Clamped at 0: ripples are stamped with performance.now() when the
+        // pointer event fires, but `t` here is the frame-START timestamp, which
+        // can be EARLIER than an event that arrived mid-frame. That made `age`
+        // slightly negative, so the easing curve went negative and arc() threw
+        // IndexSizeError on a negative radius -- killing the animation loop.
+        const age = Math.max(0, (t - ripples[i].t) / RIPPLE_MS);
         if (age >= 1) {
           ripples.splice(i, 1);
           continue;
