@@ -11,7 +11,7 @@
   <style>
     :root {
       --paper:#070C0F; --card:#0E1419; --card-2:#131B21; --well:#0A1014;
-      --ink:#EBF2F5; --ink-2:#96A6B0; --muted:#5F6F7A;
+      --ink:#EBF2F5; --ink-2:#96A6B0; --muted:#7A8A96;
       --line:#1E2931; --line-soft:#161F26; --line-strong:#2F3E48;
       --green:#00E098; --red:#FF5866; --amber:#FFB836; --ai:#4AA0FF;
       --violet:#A78BFA; --cyan:#22D3EE; --teal:#2DD4BF;
@@ -171,20 +171,12 @@
         </div>
 
         <div style="grid-column:1 / -1">
-          <div class="eyebrow">Filters <span style="color:var(--muted); letter-spacing:0.02em; text-transform:none">· 2 · applied in order</span></div>
-          <div style="margin-top:7px; display:flex; flex-direction:column; gap:7px">
-            <div style="display:flex; gap:10px; align-items:flex-start">
-              <span class="num" style="font-size:11.5px; color:var(--muted); flex-shrink:0; margin-top:2px">1</span>
-              <span style="font-size:13.5px; color:var(--ink-2)">None by default — it trades every session.</span>
-            </div>
-            <div style="display:flex; gap:10px; align-items:flex-start">
-              <span class="num" style="font-size:11.5px; color:var(--muted); flex-shrink:0; margin-top:2px">2</span>
-              <span style="font-size:13.5px; color:var(--ink-2)">
-                Optional <span class="num" style="color:var(--ink)">min_dte</span>: skip sessions close to expiry.
-                Expiry day measured worst in testing (violent last-day price swings), but the per-day
-                samples are small, so no filter is applied unless you turn it on.
-              </span>
-            </div>
+          <div class="eyebrow">Filters <span style="color:var(--muted); letter-spacing:0.02em; text-transform:none">· none active</span></div>
+          <div style="margin-top:7px; font-size:13.5px; color:var(--ink-2)">
+            None are applied — it trades every session. One optional filter exists
+            (<span class="num" style="color:var(--ink)">min_dte</span>): skip sessions close to expiry.
+            Expiry day measured worst in testing (violent last-day price swings), but the
+            per-day samples are small, so it stays off unless you turn it on.
           </div>
         </div>
       </div>

@@ -33,7 +33,12 @@
   /* ink — cooled to match the base rather than pure neutral white */
   --c-ink: 235 242 245;
   --c-ink-2: 150 166 176;
-  --c-muted: 95 111 122;
+  /* `muted` carries the eyebrow labels, which are 11.5px -- SMALL text, so it
+     has to clear AA's 4.5:1, not the 3:1 large-text allowance. The previous
+     value (95 111 122) measured 3.35:1 on card-2 and 3.78:1 on paper: it read
+     as tasteful grey and failed both. This is the same hue, lifted until the
+     worst surface pairing clears 4.5 (card-2 4.89, card 5.21, paper 5.52). */
+  --c-muted: 122 138 150;
 
   /* lines */
   --c-line: 30 41 49;

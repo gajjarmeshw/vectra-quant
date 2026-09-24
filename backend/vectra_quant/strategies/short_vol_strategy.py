@@ -62,11 +62,14 @@ class ShortVolStrategy(BaseStrategy):
             "The clock, not a signal. It enters every trading session at 09:20, "
             "selling the strike nearest to where NIFTY is trading at that moment."
         ),
+        # Deliberately ONE entry, not two. Listing the optional filter separately
+        # made the UI read "Filters · 2 · applied in order" above a list whose
+        # own text said nothing is applied -- the count contradicted the content.
         "filters": [
-            "None by default — it trades every session.",
-            "Optional 'min_dte': skip sessions close to expiry. Expiry day measured "
-            "worst in testing (violent last-day price swings), but the per-day "
-            "samples are small, so no filter is applied unless you turn it on.",
+            "None are applied — it trades every session. One optional filter exists "
+            "('min_dte'): skip sessions close to expiry. Expiry day measured worst in "
+            "testing (violent last-day price swings), but the per-day samples are "
+            "small, so it stays off unless you turn it on.",
         ],
         "sizing": (
             "Fixed lot count that you set ('lots'); it does not vary with conviction "

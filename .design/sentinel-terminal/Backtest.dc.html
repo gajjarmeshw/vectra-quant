@@ -11,7 +11,7 @@
   <style>
     :root {
       --paper:#070C0F; --card:#0E1419; --card-2:#131B21; --well:#0A1014;
-      --ink:#EBF2F5; --ink-2:#96A6B0; --muted:#5F6F7A;
+      --ink:#EBF2F5; --ink-2:#96A6B0; --muted:#7A8A96;
       --line:#1E2931; --line-soft:#161F26; --line-strong:#2F3E48;
       --green:#00E098; --red:#FF5866; --amber:#FFB836; --ai:#4AA0FF;
       --violet:#A78BFA; --cyan:#22D3EE; --orange:#FB923C;
@@ -68,8 +68,8 @@
     </svg>
     <div style="font-size:13.5px; color:var(--ink-2); line-height:1.5">
       <span style="color:var(--amber); font-weight:600">Naked short straddle — loss is unbounded.</span>
-      This sample begins after the March-2020 crash, so the worst tail event of the modern era is not
-      reflected below. Costs use a ₹/leg figure measured on a calm session; spreads widen in stressed
+      No sample available anywhere in the archive includes a March-2020-scale crash, so the worst
+      tail event of the modern era is not reflected below. Costs use a ₹/leg figure measured on a calm session; spreads widen in stressed
       markets, exactly when the large losses occur.
     </div>
   </div>
@@ -131,24 +131,34 @@
         <span class="num" style="font-size:11.5px; color:var(--muted)">74 trades · cumulative net</span>
       </div>
       <div style="flex:1; margin-top:14px; position:relative; min-height:0">
-        <svg viewBox="0 0 740 260" preserveAspectRatio="none" style="width:100%; height:100%; display:block">
+        <svg viewBox="0 0 740 260" style="width:100%; height:100%; display:block">
           <defs>
             <linearGradient id="eq" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stop-color="#00E098" stop-opacity="0.26"/>
               <stop offset="100%" stop-color="#00E098" stop-opacity="0"/>
             </linearGradient>
           </defs>
-          <line x1="0" y1="200" x2="740" y2="200" stroke="#1E2931" stroke-width="1"/>
-          <line x1="0" y1="140" x2="740" y2="140" stroke="#161F26" stroke-width="1"/>
-          <line x1="0" y1="80" x2="740" y2="80" stroke="#161F26" stroke-width="1"/>
-          <path d="M0 200 L40 188 L80 205 L120 176 L160 184 L200 150 L240 162 L280 128
-                   L320 140 L360 104 L400 132 L440 96 L480 108 L520 74 L560 88 L600 58
-                   L640 70 L680 44 L720 36 L740 30 L740 260 L0 260 Z" fill="url(#eq)"/>
-          <path d="M0 200 L40 188 L80 205 L120 176 L160 184 L200 150 L240 162 L280 128
-                   L320 140 L360 104 L400 132 L440 96 L480 108 L520 74 L560 88 L600 58
-                   L640 70 L680 44 L720 36 L740 30"
+          <!-- Scale: zero at y=230, 1 unit = Rs200. The curve has to AGREE with
+               the stat cards above it, so it carries the real shape: a peak,
+               then the -Rs12,991 session (65 units, x=500->530), bottoming into
+               the -Rs17,185 max drawdown (86 units below the peak), then the
+               recovery to +Rs23,991 (120 units above zero). -->
+          <line x1="0" y1="230" x2="740" y2="230" stroke="#1E2931" stroke-width="1"/>
+          <line x1="0" y1="170" x2="740" y2="170" stroke="#161F26" stroke-width="1"/>
+          <line x1="0" y1="110" x2="740" y2="110" stroke="#161F26" stroke-width="1"/>
+          <path d="M0 230 L40 222 L80 231 L120 210 L160 217 L200 196 L240 203 L280 180
+                   L320 187 L360 162 L400 168 L440 130 L470 96 L500 62 L530 127 L560 140
+                   L590 146 L620 134 L660 124 L700 116 L740 110 L740 260 L0 260 Z" fill="url(#eq)"/>
+          <path d="M0 230 L40 222 L80 231 L120 210 L160 217 L200 196 L240 203 L280 180
+                   L320 187 L360 162 L400 168 L440 130 L470 96 L500 62 L530 127 L560 140
+                   L590 146 L620 134 L660 124 L700 116 L740 110"
                 fill="none" stroke="#00E098" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-          <circle cx="740" cy="30" r="3.5" fill="#00E098"/>
+          <!-- peak-to-trough bracket: the drawdown the card names -->
+          <line x1="500" y1="62" x2="590" y2="62" stroke="#FF5866" stroke-width="1" stroke-dasharray="3 3" opacity="0.55"/>
+          <line x1="590" y1="62" x2="590" y2="146" stroke="#FF5866" stroke-width="1" stroke-dasharray="3 3" opacity="0.55"/>
+          <circle cx="500" cy="62" r="3" fill="#FF5866"/>
+          <circle cx="590" cy="146" r="3" fill="#FF5866"/>
+          <circle cx="740" cy="110" r="3.5" fill="#00E098"/>
         </svg>
       </div>
       <div style="display:flex; justify-content:space-between; margin-top:8px">
@@ -160,27 +170,33 @@
     <div class="card" style="display:flex; flex-direction:column; min-height:0">
       <div class="eyebrow">Session P&amp;L</div>
       <div style="flex:1; margin-top:14px; display:flex; align-items:center; gap:2px; min-height:0">
-        <svg viewBox="0 0 380 200" preserveAspectRatio="none" style="width:100%; height:100%; display:block">
-          <line x1="0" y1="118" x2="380" y2="118" stroke="#1E2931" stroke-width="1"/>
+        <svg viewBox="0 0 380 200" style="width:100%; height:100%; display:block">
+          <line x1="0" y1="100" x2="380" y2="100" stroke="#1E2931" stroke-width="1"/>
+          <!-- 52 winning / 22 losing = 74 sessions,
+               70.3% win, matching the cards above. Heights scale to the
+               real extremes: best +Rs6,850 = 46u, worst -Rs12,991 = 88u (1.90:1). -->
           <g fill="#00E098">
-            <rect x="4"   y="86"  width="6" height="32" rx="1.5"/><rect x="16"  y="70"  width="6" height="48" rx="1.5"/>
-            <rect x="40"  y="94"  width="6" height="24" rx="1.5"/><rect x="52"  y="62"  width="6" height="56" rx="1.5"/>
-            <rect x="64"  y="80"  width="6" height="38" rx="1.5"/><rect x="88"  y="56"  width="6" height="62" rx="1.5"/>
-            <rect x="100" y="90"  width="6" height="28" rx="1.5"/><rect x="124" y="74"  width="6" height="44" rx="1.5"/>
-            <rect x="136" y="66"  width="6" height="52" rx="1.5"/><rect x="160" y="88"  width="6" height="30" rx="1.5"/>
-            <rect x="172" y="60"  width="6" height="58" rx="1.5"/><rect x="196" y="78"  width="6" height="40" rx="1.5"/>
-            <rect x="220" y="68"  width="6" height="50" rx="1.5"/><rect x="232" y="92"  width="6" height="26" rx="1.5"/>
-            <rect x="256" y="54"  width="6" height="64" rx="1.5"/><rect x="280" y="84"  width="6" height="34" rx="1.5"/>
-            <rect x="292" y="72"  width="6" height="46" rx="1.5"/><rect x="316" y="58"  width="6" height="60" rx="1.5"/>
-            <rect x="340" y="76"  width="6" height="42" rx="1.5"/><rect x="352" y="64"  width="6" height="54" rx="1.5"/>
+            <rect x="11.2" y="79.0" width="3.2" height="21.0" rx="1.2"/><rect x="16.4" y="87.6" width="3.2" height="12.4" rx="1.2"/><rect x="26.6" y="69.2" width="3.2" height="30.8" rx="1.2"/><rect x="42.0" y="80.4" width="3.2" height="19.6" rx="1.2"/>
+            <rect x="47.2" y="60.1" width="3.2" height="39.9" rx="1.2"/><rect x="52.3" y="69.9" width="3.2" height="30.1" rx="1.2"/><rect x="57.5" y="85.9" width="3.2" height="14.1" rx="1.2"/><rect x="62.6" y="82.3" width="3.2" height="17.7" rx="1.2"/>
+            <rect x="67.7" y="86.5" width="3.2" height="13.5" rx="1.2"/><rect x="72.9" y="88.2" width="3.2" height="11.8" rx="1.2"/><rect x="78.0" y="68.5" width="3.2" height="31.5" rx="1.2"/><rect x="83.1" y="84.0" width="3.2" height="16.0" rx="1.2"/>
+            <rect x="88.3" y="75.4" width="3.2" height="24.6" rx="1.2"/><rect x="93.4" y="78.0" width="3.2" height="22.0" rx="1.2"/><rect x="103.7" y="70.7" width="3.2" height="29.3" rx="1.2"/><rect x="108.8" y="85.4" width="3.2" height="14.6" rx="1.2"/>
+            <rect x="113.9" y="73.2" width="3.2" height="26.8" rx="1.2"/><rect x="119.1" y="85.9" width="3.2" height="14.1" rx="1.2"/><rect x="124.2" y="78.5" width="3.2" height="21.5" rx="1.2"/><rect x="134.5" y="81.7" width="3.2" height="18.3" rx="1.2"/>
+            <rect x="139.6" y="59.5" width="3.2" height="40.5" rx="1.2"/><rect x="144.8" y="68.3" width="3.2" height="31.7" rx="1.2"/><rect x="160.2" y="83.1" width="3.2" height="16.9" rx="1.2"/><rect x="170.4" y="66.3" width="3.2" height="33.7" rx="1.2"/>
+            <rect x="175.6" y="73.3" width="3.2" height="26.7" rx="1.2"/><rect x="180.7" y="86.5" width="3.2" height="13.5" rx="1.2"/><rect x="185.8" y="57.3" width="3.2" height="42.7" rx="1.2"/><rect x="191.0" y="83.1" width="3.2" height="16.9" rx="1.2"/>
+            <rect x="206.4" y="80.4" width="3.2" height="19.6" rx="1.2"/><rect x="211.5" y="81.1" width="3.2" height="18.9" rx="1.2"/><rect x="216.6" y="87.6" width="3.2" height="12.4" rx="1.2"/><rect x="221.8" y="86.9" width="3.2" height="13.1" rx="1.2"/>
+            <rect x="226.9" y="74.8" width="3.2" height="25.2" rx="1.2"/><rect x="232.0" y="82.3" width="3.2" height="17.7" rx="1.2"/><rect x="237.2" y="74.4" width="3.2" height="25.6" rx="1.2"/><rect x="242.3" y="79.6" width="3.2" height="20.4" rx="1.2"/>
+            <rect x="247.5" y="77.8" width="3.2" height="22.2" rx="1.2"/><rect x="252.6" y="60.5" width="3.2" height="39.5" rx="1.2"/><rect x="262.9" y="77.2" width="3.2" height="22.8" rx="1.2"/><rect x="268.0" y="75.0" width="3.2" height="25.0" rx="1.2"/>
+            <rect x="273.1" y="65.8" width="3.2" height="34.2" rx="1.2"/><rect x="278.3" y="83.9" width="3.2" height="16.1" rx="1.2"/><rect x="283.4" y="84.7" width="3.2" height="15.3" rx="1.2"/><rect x="293.7" y="67.8" width="3.2" height="32.2" rx="1.2"/>
+            <rect x="298.8" y="82.2" width="3.2" height="17.8" rx="1.2"/><rect x="303.9" y="83.7" width="3.2" height="16.3" rx="1.2"/><rect x="309.1" y="70.5" width="3.2" height="29.5" rx="1.2"/><rect x="314.2" y="61.9" width="3.2" height="38.1" rx="1.2"/>
+            <rect x="319.3" y="83.5" width="3.2" height="16.5" rx="1.2"/><rect x="324.5" y="61.2" width="3.2" height="38.8" rx="1.2"/><rect x="345.0" y="86.4" width="3.2" height="13.6" rx="1.2"/><rect x="350.2" y="89.3" width="3.2" height="10.7" rx="1.2"/>
           </g>
           <g fill="#FF5866">
-            <rect x="28"  y="118" width="6" height="26" rx="1.5"/><rect x="76"  y="118" width="6" height="18" rx="1.5"/>
-            <rect x="112" y="118" width="6" height="34" rx="1.5"/><rect x="148" y="118" width="6" height="22" rx="1.5"/>
-            <rect x="184" y="118" width="6" height="68" rx="1.5"/><rect x="208" y="118" width="6" height="16" rx="1.5"/>
-            <rect x="244" y="118" width="6" height="30" rx="1.5"/><rect x="268" y="118" width="6" height="20" rx="1.5"/>
-            <rect x="304" y="118" width="6" height="40" rx="1.5"/><rect x="328" y="118" width="6" height="24" rx="1.5"/>
-            <rect x="364" y="118" width="6" height="14" rx="1.5"/>
+            <rect x="1.0" y="100.0" width="3.2" height="22.9" rx="1.2"/><rect x="6.1" y="100.0" width="3.2" height="46.4" rx="1.2"/><rect x="21.5" y="100.0" width="3.2" height="27.7" rx="1.2"/><rect x="31.8" y="100.0" width="3.2" height="17.8" rx="1.2"/>
+            <rect x="36.9" y="100.0" width="3.2" height="12.3" rx="1.2"/><rect x="98.5" y="100.0" width="3.2" height="15.8" rx="1.2"/><rect x="129.3" y="100.0" width="3.2" height="16.4" rx="1.2"/><rect x="149.9" y="100.0" width="3.2" height="18.7" rx="1.2"/>
+            <rect x="155.0" y="100.0" width="3.2" height="38.4" rx="1.2"/><rect x="165.3" y="100.0" width="3.2" height="20.9" rx="1.2"/><rect x="196.1" y="100.0" width="3.2" height="17.6" rx="1.2"/><rect x="201.2" y="100.0" width="3.2" height="32.9" rx="1.2"/>
+            <rect x="257.7" y="100.0" width="3.2" height="88.0" rx="1.2"/><rect x="288.5" y="100.0" width="3.2" height="39.9" rx="1.2"/><rect x="329.6" y="100.0" width="3.2" height="38.3" rx="1.2"/><rect x="334.8" y="100.0" width="3.2" height="26.8" rx="1.2"/>
+            <rect x="339.9" y="100.0" width="3.2" height="21.6" rx="1.2"/><rect x="355.3" y="100.0" width="3.2" height="44.3" rx="1.2"/><rect x="360.4" y="100.0" width="3.2" height="17.1" rx="1.2"/><rect x="365.6" y="100.0" width="3.2" height="30.3" rx="1.2"/>
+            <rect x="370.7" y="100.0" width="3.2" height="17.5" rx="1.2"/><rect x="375.8" y="100.0" width="3.2" height="35.2" rx="1.2"/>
           </g>
         </svg>
       </div>
